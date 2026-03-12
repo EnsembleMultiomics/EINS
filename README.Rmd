@@ -27,7 +27,7 @@ Integrating multi-omics data such as genomics, proteomics, metabolomics, and lip
 You can install EINS like so:
 
 ``` r
-devtools::install_github("MaraZuid/Ensemble-Integration-Suite")
+devtools::install_github("EnsembleMultiomics/EINS")
 ```
 
 ### How to use
@@ -105,4 +105,5 @@ EINS_NCI60$plot_Sankey_Methods(MetadataFeature = "tissue of origin", Ensemble = 
 EINS_NCI60$Plots$Sankey_Methods$Selected$Clusters_5
 ```
 ![PNG of Sankey HTML widget](./man/Figures/Figure_2.png)
+
 
