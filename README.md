@@ -39,7 +39,7 @@ identify consistent patterns across multi-omics integration methods.
 You can install EINS like so:
 
 ``` r
-devtools::install_github("MaraZuid/Ensemble-Integration-Suite")
+devtools::install_github("EnsembleMultiomics/EINS")
 ```
 
 ### How to use
@@ -166,5 +166,6 @@ EINS_NCI60$Plots$Sankey_Methods$Selected$Clusters_5
 <img src="./man/Figures/Figure_2.png" alt="PNG of Sankey HTML widget" />
 <figcaption aria-hidden="true">PNG of Sankey HTML widget</figcaption>
 </figure>
+
 
 
