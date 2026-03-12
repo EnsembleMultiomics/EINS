@@ -151,7 +151,7 @@ EINS_NCI60$plot_Multi_Omics_Heatmap(MetadataFeatures = c("tissue of origin", "Ep
 EINS_NCI60$Plots$Multi_Omics_Heatmap$Ensemble$MDS$Clusters_5
 ```
 
-<img src="man/figures/README-multi-omics heatmap-1.png" width="100%" />
+<img src="./man/figures/README-multi-omics heatmap-1.png" width="100%" />
 
 A Sankey plot with the cluster assignments for multiple multi-omics
 integration methods and subtype ensemble results with the same number of
@@ -166,3 +166,4 @@ EINS_NCI60$Plots$Sankey_Methods$Selected$Clusters_5
 <img src="./man/Figures/Figure_2.png" alt="PNG of Sankey HTML widget" />
 <figcaption aria-hidden="true">PNG of Sankey HTML widget</figcaption>
 </figure>
+
