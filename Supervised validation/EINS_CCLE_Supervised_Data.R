@@ -86,10 +86,10 @@ EINS_CCLE$run_MoCluster(Clusters = 2:20, Components = 9, Linkage = "ward.D2")
 EINS_CCLE$run_MCIA(PerformCluster = T, Clusters = 2:20, Components = 9)
 
 #Run jNMF multi-omics integration
-EINS_CCLE5$run_jNMF(Clusters = 2:20, MaxIter = 200)
+EINS_CCLE$run_jNMF(Clusters = 2:20, MaxIter = 200)
 
 #Run iNMF multi-omics integration
-EINS_CCLE5$run_iNMF(Clusters = 2:20, MaxIter = 200)
+EINS_CCLE$run_iNMF(Clusters = 2:20, MaxIter = 200)
 
 #Run MOFA multi-omics integration
 EINS_CCLE$run_MOFA(PerformCluster = T, Clusters = 2:20, Factors = 9)
