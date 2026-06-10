@@ -1711,12 +1711,12 @@ Ensemble_Cluster_Data = function(Data){
 #' stored in $ClusterRes. Sample distance matrix, stored in $DistMat.
 #' hierarchical clustering tree, stored in $HClustRes.
 #' @keywords internal
-Ensemble_Cluster = function(MethodClusterResults,
-                            Sample_IDs,
-                            Distance = "euclidean",
-                            MinkowskiPower = NULL,
-                            Linkage = "ward.D2",
-                            Clusters = NULL){
+Ensemble_Cluster_CHC = function(MethodClusterResults,
+                                Sample_IDs,
+                                Distance = "euclidean",
+                                MinkowskiPower = NULL,
+                                Linkage = "ward.D2",
+                                Clusters = NULL){
   Ens_Clust_Samples = Sample_IDs
   Ens_Matrix = matrix(0, nrow = length(Ens_Clust_Samples), ncol = length(Ens_Clust_Samples))
   for(i in 1:length(MethodClusterResults)){
@@ -1743,6 +1743,363 @@ Ensemble_Cluster = function(MethodClusterResults,
   EnsembleClustering$ClusterRes = Ens_Clust_Result
   EnsembleClustering$DistMat = Dist_Matrix
   EnsembleClustering$HClustRes = Ens_HClust
+
+  return(EnsembleClustering)
+}
+
+#Create ensemble clustering from ensemble matrix
+#' Create an ensemble clustering assignment from all available multi-omics
+#' integration results and perform Multidimensional Scaling (MDS) followed
+#' by hierarchical clustering
+#' @description
+#' Using the dataframe with multi-omics integration cluster assignments as
+#' created in `Ensemble_Cluster_Data()`, create a sample similarity matrix by
+#' counting the number of times samples cluster together. Classical MDS is
+#' applied to this matrix to obtain sample coordinates. Hierarchical
+#' clustering is then performed on this MDS matrix. The MDS dimension is
+#' selected automatically, by using leave-one-method-out stabilities, to favor
+#' the most compact representation which preserves robustness. Stability is
+#' quantified as the Adjusted Rand Index  between the full-ensemble MDS-HC
+#' clustering and each leave-one-method-out MDS-HC clustering.
+#' EnsembleClustering = list()
+#' @param MethodClusterResults A list of dataframes with cluster assignments per
+#' multi-omics integration method.
+#' @param Sample_IDs Vector of sample names.
+#' @param Distance Distance metric to be used for the calculation of the
+#' feature distance matrices. Must be one of: `"euclidean"` (default),
+#' `"maximum"`, `"manhattan"`, `"canberra"`, `"binary"` or `"minkowski"`.
+#' If `"minkowski"` is selected, argument `"MinkowskiPower"` needs to be
+#' included.
+#' @param MinkowskiPower Power of the Minkowski distance. Default is `NULL`.
+#' @param CandidateDimensions Number of MDS dimensions to be tested. Default is
+#' 2:10 dimensions.
+#' @param StabilityEpsilon How much the selected leave-one-method-out run may
+#' diverge from the maximum observed stability, default is 0.02.
+#' @param AddConstant Logical, indicating if an additive constant c* should
+#' be computed, and added to the non-diagonal dissimilarities such that the
+#' modified dissimilarities are Euclidean.
+#' @param Linkage Agglomeration method to be used for the hierarchical
+#' clustering. Must be one of: `"ward.D"`, `"ward.D2"` (default), `"single"`,
+#' `"complete"`, `"average"`, `"mcquitty"`, `"median"` or `"centroid"`.
+#' @param Clusters Number of clusters to create from the hierarchical clustering
+#' result. Default is `NULL`.
+#' @returns A list of results. Sample distance matrix, stored in $DistMat.
+#' Consensus matrix, stored in $ConsensusMatrix. Dissimilarity matrix, stored in
+#' $DissimilarityMatrix. MDS final embedding, stored in $Embed. MDS embedding
+#' distance matrix, $EmbedDist. Full final MDS result, provided in $MDS.
+#' Dimension calculation information, provided in $DimensionInfo. Hierarchical
+#' clustering tree, stored in $HClustRes.
+#' @keywords internal
+Ensemble_Cluster_MDS_HC = function(MethodClusterResults,
+                                   Sample_IDs,
+                                   Distance = "euclidean",
+                                   MinkowskiPower = NULL,
+                                   CandidateDimensions = c(2:10),
+                                   StabilityEpsilon = 0.02,
+                                   AddConstant = TRUE,
+                                   Linkage = "ward.D2",
+                                   Clusters = NULL){
+  if(is.null(Clusters)){
+    stop("Number of clusters must be provided.")
+  }
+
+  ## Internal helper
+
+  #Adjusted Rand Index
+  AdjustedRandIndex = function(x, y){
+    x = as.factor(x)
+    y = as.factor(y)
+
+    tab = table(x, y)
+
+    comb2 = function(z){
+      z * (z - 1) / 2
+    }
+
+    sum_comb = sum(comb2(tab))
+    sum_row = sum(comb2(rowSums(tab)))
+    sum_col = sum(comb2(colSums(tab)))
+
+    n = sum(tab)
+    total_comb = comb2(n)
+
+    expected_index = (sum_row * sum_col) / total_comb
+    max_index = 0.5 * (sum_row + sum_col)
+
+    if(max_index == expected_index){
+      return(0)
+    }
+
+    ari = (sum_comb - expected_index) / (max_index - expected_index)
+    return(as.numeric(ari))
+  }
+  #extract cluster vector
+  GetClusterVector = function(Ens_Clust_Result,
+                              Sample_IDs){
+    if(is.data.frame(Ens_Clust_Result) || is.matrix(Ens_Clust_Result)){
+      if("Cluster" %in% colnames(Ens_Clust_Result)){
+        Ens_Clust_Group = Ens_Clust_Result[, "Cluster"]
+      }else{
+        Ens_Clust_Group = Ens_Clust_Result[, 1]
+      }
+
+      if(!is.null(rownames(Ens_Clust_Result)) && all(Sample_IDs %in% rownames(Ens_Clust_Result))){
+        names(Ens_Clust_Group) = rownames(Ens_Clust_Result)
+        Ens_Clust_Group = Ens_Clust_Group[Sample_IDs]
+      }else{
+        names(Ens_Clust_Group) = Sample_IDs
+      }
+
+    }else if(is.list(Ens_Clust_Result) && !is.null(Ens_Clust_Result$Cluster)){
+      Ens_Clust_Group = Ens_Clust_Result$Cluster
+      if(!is.null(names(Ens_Clust_Group)) && all(Sample_IDs %in% names(Ens_Clust_Group))){
+        Ens_Clust_Group = Ens_Clust_Group[Sample_IDs]
+      }else{
+        names(Ens_Clust_Group) = Sample_IDs
+      }
+    }else{
+      Ens_Clust_Group = Ens_Clust_Result
+      if(!is.null(names(Ens_Clust_Group)) && all(Sample_IDs %in% names(Ens_Clust_Group))){
+        Ens_Clust_Group = Ens_Clust_Group[Sample_IDs]
+      }else{
+        names(Ens_Clust_Group) = Sample_IDs
+      }
+    }
+    return(Ens_Clust_Group)
+  }
+
+  # Build consensus matrix and dissimilarity matrix
+  BuildConsensus = function(MethodClusterResults,
+                            Sample_IDs,
+                            DropIndex = NULL){
+    if(!is.null(DropIndex)){
+      MethodClusterResults = MethodClusterResults[-DropIndex]
+    }
+
+    if(length(MethodClusterResults) < 1){
+      stop("No clustering methods available after applying DropIndex.")
+    }
+
+    Ens_Clust_Samples = Sample_IDs
+    N_Samples = length(Ens_Clust_Samples)
+
+    Ens_Matrix = matrix(0,
+                        nrow = N_Samples,
+                        ncol = N_Samples)
+
+    rownames(Ens_Matrix) = colnames(Ens_Matrix) = Ens_Clust_Samples
+
+    for(i in seq_along(MethodClusterResults)){
+      Ens_Clust_Result = MethodClusterResults[[i]]
+      Ens_Clust_Group = GetClusterVector(Ens_Clust_Result = Ens_Clust_Result,
+                                         Sample_IDs = Ens_Clust_Samples)
+
+      Ens_Clust_Ans = matrix(0,
+                             nrow = N_Samples,
+                             ncol = N_Samples)
+
+      rownames(Ens_Clust_Ans) = colnames(Ens_Clust_Ans) = Ens_Clust_Samples
+      Ens_Clust_Unique_Group = unique(Ens_Clust_Group)
+
+      for(j in seq_along(Ens_Clust_Unique_Group)){
+        Ens_Clust_Group_j = names(Ens_Clust_Group)[Ens_Clust_Group == Ens_Clust_Unique_Group[j]]
+        Ens_Clust_Ans[Ens_Clust_Group_j, Ens_Clust_Group_j] = 1
+      }
+      Ens_Matrix = Ens_Matrix + as.matrix(Ens_Clust_Ans)
+    }
+    Ens_Sim_Matrix = Ens_Matrix / length(MethodClusterResults)
+    rownames(Ens_Sim_Matrix) = colnames(Ens_Sim_Matrix) = Ens_Clust_Samples
+    Ens_Dissim_Matrix = 1 - Ens_Sim_Matrix
+    diag(Ens_Dissim_Matrix) = 0
+    rownames(Ens_Dissim_Matrix) = colnames(Ens_Dissim_Matrix) = Ens_Clust_Samples
+    Dist_Matrix = stats::as.dist(Ens_Dissim_Matrix)
+
+    return(list(ConsensusMatrix = Ens_Sim_Matrix,
+                DissimilarityMatrix = Ens_Dissim_Matrix,
+                DistMat = Dist_Matrix))
+  }
+  #cluster MDS points using HC
+  ClusterFromPoints = function(MDS_Points,
+                               Sample_IDs,
+                               Distance = "euclidean",
+                               MinkowskiPower = NULL,
+                               Linkage = "ward.D2",
+                               Clusters = NULL){
+    if(is.null(Clusters)){
+      stop("Clusters must be provided.")
+    }
+
+    MDS_Points = as.matrix(MDS_Points)
+    rownames(MDS_Points) = Sample_IDs
+
+    if(Distance == "minkowski"){
+      if(is.null(MinkowskiPower)){
+        Embed_Dist_Matrix = stats::dist(MDS_Points,
+                                        method = Distance)
+      }else{
+        Embed_Dist_Matrix = stats::dist(MDS_Points,
+                                        method = Distance,
+                                        p = MinkowskiPower)
+      }
+    }else{
+      Embed_Dist_Matrix = stats::dist(MDS_Points,
+                                      method = Distance)
+    }
+
+    HClust_Result = stats::hclust(d = Embed_Dist_Matrix,
+                                  method = Linkage)
+
+    Cluster_Result = stats::cutree(tree = HClust_Result,
+                                   k = Clusters)
+
+    Cluster_Result = Cluster_Result[Sample_IDs]
+
+    return(list(ClusterRes = Cluster_Result,
+                EmbedDist = Embed_Dist_Matrix,
+                HClustRes = HClust_Result))
+  }
+
+  ## Main function body
+  Ens_Clust_Samples = Sample_IDs
+  N_Samples = length(Ens_Clust_Samples)
+
+  if(N_Samples < 2){
+    stop("At least two samples are required.")
+  }
+
+  if(length(MethodClusterResults) < 3){
+    stop("MDS-HC stability selection requires at least three clustering methods.")
+  }
+
+  Max_Possible_Dimensions = N_Samples - 1
+  CandidateDimensions = sort(unique(as.integer(CandidateDimensions)))
+  CandidateDimensions = CandidateDimensions[CandidateDimensions >= 1 & CandidateDimensions <= Max_Possible_Dimensions]
+
+  if(length(CandidateDimensions) == 0){
+    stop("No valid CandidateDimensions available.")
+  }
+
+  Max_Candidate_Dim = max(CandidateDimensions)
+
+  ## Full ensemble consensus and full MDS
+  Full_Consensus = BuildConsensus(MethodClusterResults = MethodClusterResults,
+                                  Sample_IDs = Ens_Clust_Samples)
+
+  Full_MDS = stats::cmdscale(d = Full_Consensus$DistMat,
+                             k = Max_Candidate_Dim,
+                             eig = TRUE,
+                             add = AddConstant)
+
+  Full_Points = as.matrix(Full_MDS$points)
+  rownames(Full_Points) = Ens_Clust_Samples
+
+  Full_Labels = list()
+
+  for(p in CandidateDimensions){
+    Full_Labels[[paste0("Dim_", p)]] = ClusterFromPoints(MDS_Points = Full_Points[, seq_len(p), drop = FALSE],
+                                                         Sample_IDs = Ens_Clust_Samples,
+                                                         Distance = Distance,
+                                                         MinkowskiPower = MinkowskiPower,
+                                                         Linkage = Linkage,
+                                                         Clusters = Clusters)$ClusterRes
+  }
+  ## Leave-one-method-out stability selection
+  N_Methods = length(MethodClusterResults)
+
+  Stability_Matrix = matrix(NA,
+                            nrow = length(CandidateDimensions),
+                            ncol = N_Methods)
+
+  rownames(Stability_Matrix) = paste0("Dim_", CandidateDimensions)
+  colnames(Stability_Matrix) = paste0("Drop_", seq_len(N_Methods))
+
+  for(drop_i in seq_len(N_Methods)){
+    Drop_Consensus = BuildConsensus(MethodClusterResults = MethodClusterResults,
+                                    Sample_IDs = Ens_Clust_Samples,
+                                    DropIndex = drop_i)
+
+    Drop_MDS = stats::cmdscale(d = Drop_Consensus$DistMat,
+                               k = Max_Candidate_Dim,
+                               eig = TRUE,
+                               add = AddConstant)
+
+    Drop_Points = as.matrix(Drop_MDS$points)
+    rownames(Drop_Points) = Ens_Clust_Samples
+    for(p in CandidateDimensions){
+      key = paste0("Dim_", p)
+
+      Drop_Labels = ClusterFromPoints(MDS_Points = Drop_Points[, seq_len(p), drop = FALSE],
+                                      Sample_IDs = Ens_Clust_Samples,
+                                      Distance = Distance,
+                                      MinkowskiPower = MinkowskiPower,
+                                      Linkage = Linkage,
+                                      Clusters = Clusters)$ClusterRes
+
+      Stability_Matrix[key, paste0("Drop_", drop_i)] = AdjustedRandIndex(Full_Labels[[key]],
+                                                                         Drop_Labels)
+    }
+  }
+
+  Mean_Stability = rowMeans(Stability_Matrix,
+                            na.rm = TRUE)
+
+  SD_Stability = apply(Stability_Matrix,
+                       1,
+                       stats::sd,
+                       na.rm = TRUE)
+
+  Max_Stability = max(Mean_Stability,
+                      na.rm = TRUE)
+
+  Eligible = CandidateDimensions[Mean_Stability >= (Max_Stability - StabilityEpsilon)]
+
+  SelectedDimensions = min(Eligible)
+
+  Stability_Table = data.frame(MDSDimensions = CandidateDimensions,
+                               MeanARI = as.numeric(Mean_Stability),
+                               SDARI = as.numeric(SD_Stability),
+                               stringsAsFactors = FALSE)
+
+  ## Final MDS-HC using selected dimensions on full consensus matrix
+  Final_MDS = stats::cmdscale(d = Full_Consensus$DistMat,
+                              k = SelectedDimensions,
+                              eig = TRUE,
+                              add = AddConstant)
+  Final_MDS_Points = as.matrix(Final_MDS$points)
+  rownames(Final_MDS_Points) = Ens_Clust_Samples
+  colnames(Final_MDS_Points) = paste0("MDS", seq_len(ncol(Final_MDS_Points)))
+
+  Final_Clustering = ClusterFromPoints(MDS_Points = Final_MDS_Points,
+                                       Sample_IDs = Ens_Clust_Samples,
+                                       Distance = Distance,
+                                       MinkowskiPower = MinkowskiPower,
+                                       Linkage = Linkage,
+                                       Clusters = Clusters)
+
+  DimensionInfo = list()
+  DimensionInfo$SelectionMethod = "stability"
+  DimensionInfo$SelectedDimensions = SelectedDimensions
+  DimensionInfo$CandidateDimensions = CandidateDimensions
+  DimensionInfo$StabilityEpsilon = StabilityEpsilon
+  DimensionInfo$StabilityMatrix = Stability_Matrix
+  DimensionInfo$StabilityTable = Stability_Table
+  DimensionInfo$MaxStability = Max_Stability
+  DimensionInfo$FullMDSForSelection = Full_MDS
+  DimensionInfo$AddConstant = AddConstant
+  DimensionInfo$Linkage = Linkage
+  DimensionInfo$Distance = Distance
+  DimensionInfo$MinkowskiPower = MinkowskiPower
+
+  EnsembleClustering = list()
+  EnsembleClustering$ClusterRes = Final_Clustering$ClusterRes
+  EnsembleClustering$DistMat = Full_Consensus$DistMat
+  EnsembleClustering$ConsensusMatrix = Full_Consensus$ConsensusMatrix
+  EnsembleClustering$DissimilarityMatrix = Full_Consensus$DissimilarityMatrix
+  EnsembleClustering$Embed = Final_MDS_Points
+  EnsembleClustering$EmbedDist = Final_Clustering$EmbedDist
+  EnsembleClustering$MDS = Final_MDS
+  EnsembleClustering$DimensionInfo = DimensionInfo
+  EnsembleClustering$HClustRes = Final_Clustering$HClustRes
 
   return(EnsembleClustering)
 }
@@ -2768,8 +3125,10 @@ Data_Manipulation_Sankey_Methods = function(ClusterResData,
       } else if(grepl("minkowski 4", Sankey_clustname_i)){
         Sankey_methabbr_i = "SNF_Min_4"
       }
+    } else if(grepl("EnsembleCHC", Sankey_clustname_i)){
+      Sankey_methabbr_i = "CHC"
     } else if(grepl("EnsembleMDS", Sankey_clustname_i)){
-      Sankey_methabbr_i = "MDS"
+      Sankey_methabbr_i = "MDS_HC"
     } else if(grepl("EnsembleCCA", Sankey_clustname_i)){
       Sankey_methabbr_i = "CCA"
     }
@@ -2811,8 +3170,10 @@ Data_Manipulation_Sankey_Methods = function(ClusterResData,
       } else if(grepl("minkowski 4", Sankey_clustname_j)){
         Sankey_methabbr_j = "SNF_Min_4"
       }
+    } else if(grepl("EnsembleCHC", Sankey_clustname_j)){
+      Sankey_methabbr_j = "CHC"
     } else if(grepl("EnsembleMDS", Sankey_clustname_j)){
-      Sankey_methabbr_j = "MDS"
+      Sankey_methabbr_j = "MDS_HC"
     } else if(grepl("EnsembleCCA", Sankey_clustname_j)){
       Sankey_methabbr_j = "CCA"
     }
