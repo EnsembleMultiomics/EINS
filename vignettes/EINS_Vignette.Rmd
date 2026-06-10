@@ -1,0 +1,352 @@
+---
+title: "EINS_Vignette"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{EINS_Vignette}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(EINS)
+set.seed(47)
+```
+
+##Introduction
+
+Integration of multiple different omics, such as genomics, proteomics, metabolomics and lipidomics allows for holistic insights into cellular biology and disease compared to using single omics characterization. Different integration strategies have been developed, however they rely on different approaches leading often to different outcomes. To identify the patterns in samples and features which are most strongly supported by the underlying omics data, we developed and ensemble method that combines the integration results from multiple integration strategies, both in the sample and feature space. In this vignette, we use a small subset of NCI60 methylation (400 genes), transcriptomics (500 genes) and proteomics (300 proteins) data. In these datasets, the columns are 56 different cancer cell lines, with genes in rows. The datasets are stored in a list, together with a metadata file, containing information regarding the 56 included cancer cell lines.
+
+The dimensions of the datasets are as follows:
+```{r}
+sapply(EINS_NCI60_Toy, dim)
+```
+
+##EINS overview
+
+In EINS, the data can be imported into an EINS R6 class object, so all following steps can be performed within the object. This minimizes the data wrangling that needs to be done, as data preprocessing and selection can be handled within the object. We will now go through the workflow which EINS requires.
+
+##EINS R6 class creation
+
+To start working with EINS, the EINS R6 class object needs to be initialized. 
+```{r}
+EINS_NCI60 <- Ensemble_Integration_Suite$new()
+```
+
+From this initialization, omics files and sample metadata files can be imported into the EINS object. This is required individually per omics dataset, in case the metadata differs between omics types, and to allow definition of the omics name. Function `add_Omics_df` can be used to import data from the R environment, whereas `add_Omics_file` can import data from file path. 
+```{r}
+EINS_NCI60$add_Omics_df(OmicsName = "Proteomics", DataDF = EINS_NCI60_Toy$Proteomics, MetaDF = EINS_NCI60_Toy$Metadata)
+EINS_NCI60$add_Omics_df(OmicsName = "Transcriptomics", DataDF = EINS_NCI60_Toy$Transcriptomics, MetaDF = EINS_NCI60_Toy$Metadata)
+EINS_NCI60$add_Omics_df(OmicsName = "Methylation", DataDF = EINS_NCI60_Toy$Methylation, MetaDF = EINS_NCI60_Toy$Metadata)
+```
+
+The imported data is stored in the EINS object, in the `$Omics` list. The omics dataset is stored in `$Omics$Raw_Data` per omics, and the metadata is stored in `$Omics$Metadata` per omics. See an example of the proteomics files:
+```{r}
+head(EINS_NCI60$Omics$Raw_Data$Proteomics)
+head(EINS_NCI60$Omics$Metadata$Proteomics)
+```
+
+
+##Data preparation
+
+Once all omics datasets have been imported into the omics object, some data preparation steps can be performed. First, the orientation of the omics datasets needs to be confirmed. EINS requires omics data to contain features in rows and samples in columns. If this is not the case, the datasets need to be transposed. In the NCI60 data, the samples are already in the columns, so `SamplesInCol` = `TRUE`. This step can also be skipped in this case. If the samples are in rows in the original data, `SamplesInCol` = `FALSE`, which transposes all omics datasets.   
+```{r}
+EINS_NCI60$pivot_Samples_Wide(SamplesInCol = TRUE)
+```
+
+Following this, the datasets can be preprocessed. The preprocessing is performed per omics, so each omics dataset can be processed with individual methods. 7 preprocessing steps are available, and can be performed in any order as preferred. These steps can be selected by including them `FunctionOrder`, with the order of the steps correlating to the order the preprocessing steps are performed. For the NCI60 toy data, z-score normalization needs to be performed on the proteomics and methylation datasets, and NA imputation needs to be performed on all datasets.
+```{r}
+EINS_NCI60$run_Preprocessing(OmicsName = "Proteomics", FunctionOrder = c("Normalization", "NAImpute"), NAMethod = "knn", NA_K_Neighbors = 10)
+EINS_NCI60$run_Preprocessing(OmicsName = "Transcriptomics", FunctionOrder = c("NAImpute"), NAMethod = "knn", NA_K_Neighbors = 10)
+EINS_NCI60$run_Preprocessing(OmicsName = "Methylation", FunctionOrder = c("Normalization", "NAImpute"), NAMethod = "knn", NA_K_Neighbors = 10)
+```
+
+The preprocessed data is then stored in the `$Preprocessed_Omics` list. See an example of the proteomics dataset:
+```{r}
+head(EINS_NCI60$Preprocessed_Omics$Data$Proteomics)
+```
+
+Once the datasets have been preprocessed, the samples need to be matched. Multiple of the multi-omics integration methods included in EINS require matching samples across dataset, in the same order.
+```{r}
+EINS_NCI60$run_Sample_Matching()
+```
+
+The omics datasets with matching samples are then stored in the `$Preprocessed_Omics$Matched_Data list`. See an example of the proteomics dataset:
+```{r}
+head(EINS_NCI60$Preprocessed_Omics$Matched_Data$Proteomics)
+```
+
+##Single omics clustering
+
+To assess the omics data, single omics clustering is available. First, a model based clustering method, using HDclassif is available.
+```{r}
+EINS_NCI60$run_Single_Omics_Clustering(MinClust = 2, MaxClust = 8, HDModel = "all")
+```
+
+The model fit is stored in list `$Single_Omics$Fit`, and the cluster result is stored in `$Single_Omics$ClusterRes`. See example of the proteomics dataset:
+```{r}
+head(EINS_NCI60$Single_Omics$ClusterRes$Proteomics)
+```
+
+Additionally, hierarchical clustering of the single omics data is provided, to assess the sample relation.
+```{r}
+EINS_NCI60$run_Single_Omics_Hierarchical_Clustering()
+```
+
+The single omics distance matrix is stored in `$Single_Omics$DistanceMatrix`, and the hierarchical clustering tree is stored in `$Single_Omics$HClustTree`. See examples of the proteomics dataset.
+```{r}
+head(EINS_NCI60$Single_Omics$DistanceMatrix$Proteomics)
+plot(EINS_NCI60$Single_Omics$HClustTree$Proteomics)
+```
+
+##Multi-omics integration
+
+Nine different methods of multi-omics integration are included in EINS, with some of the methods calculating sample clustering results, and some of the methods calculating feature weights in factors. We will highlight three methods with differing result types. 
+
+#MoCluster
+
+MoCluster can be performed using a single cluster number or a range, and requires a number of components (factors).
+```{r}
+EINS_NCI60$run_MoCluster(Clusters = 2:8, Components = 5, Linkage = "ward.D2")
+```
+
+The fit of the multi-omics integration is stored in the `$Multi_Omics$Fit$MoCluster` list, the cluster assignments in the `$Multi_Omics$ClusterRes$MoCluster` list, and the feature weights per omics in the `$Multi_Omics$FeatureRes$MoCluster` list. See examples of 5 clusters and 5 components.
+```{r}
+head(EINS_NCI60$Multi_Omics$ClusterRes$MoCluster$Clusters_5)
+head(EINS_NCI60$Multi_Omics$FeatureRes$MoCluster$Factors_5$Proteomics)
+```
+
+#MCIA
+
+MCIA requires a number of components (factors), and can be clustered with K-means clustering if desired.
+```{r}
+EINS_NCI60$run_MCIA(Components = 5, PerformCluster = TRUE, Clusters = 2:8)
+```
+
+The fit of the multi-omics integration is stored in the `$Multi_Omics$Fit$MCIA` list, the cluster assignments in the `$Multi_Omics$ClusterRes$MCIA` list, and the feature weights per omics in the `$Multi_Omics$FeatureRes$MCIA` list. See examples of 5 components.
+```{r}
+head(EINS_NCI60$Multi_Omics$ClusterRes$MCIA$Clusters_5)
+head(EINS_NCI60$Multi_Omics$FeatureRes$MCIA$Factors_5$Proteomics)
+```
+
+#LRAcluster
+
+LRAcluster can be performed using a single cluster number or a range.
+```{r}
+EINS_NCI60$run_LRAcluster(Clusters = 2:8, Linkage = "ward.D2")
+```
+
+The fit of the multi-omics integration is stored in the `$Multi_Omics$Fit$LRAcluster` list and the cluster assignments in the `$Multi_Omics$ClusterRes$LRAcluster` list. See examples of 5 clusters:
+```{r}
+head(EINS_NCI60$Multi_Omics$ClusterRes$LRAcluster$Clusters_5)
+```
+
+The other methods can be performed using functions: `$run_jNMF()`, `$run_iNMF()`, `$run_COCA()`, `$run_MOFA()`, `$run_SNF()`, and `$run_GAUDI()`.
+
+For the methods which provide feature weight results (MoCluster, MCIA, jNMF, iNMF and MOFA), the integrated feature weights per factor can be combined, and hierarchical clustering can be performed for the features per method. 
+```{r}
+EINS_NCI60$run_Multi_Omics_Feature_HClust(nFactors = 5)
+```
+
+The feature distance matrix per multi-omics integration method is stored in the `$Multi_Omics$Feature_HClust$DistanceMatrix` list, and the hierarchical clustering tree is stored in the `$Multi_Omics$Feature_HClust$HClustTree` list. See examples of MoCluster:
+```{r}
+head(EINS_NCI60$Multi_Omics$Feature_HClust$DistanceMatrix$MoCluster)
+plot(EINS_NCI60$Multi_Omics$Feature_HClust$HClustTree$MoCluster)
+```
+
+##Ensemble integration
+
+The results of both the sample cluster assignments and feature hierarchical clustering from the multi-omics integration methods can be combined to come to a more robust result.
+
+Consensus Hierarchical Clustering (CHC) ensemble integration sample clustering combines all the clustering results calculated by the different multi-omics integration methods, and uses hierarchical clustering to create a cluster assignment.
+```{r}
+EINS_NCI60$run_Ensemble_Sample_CHC(Clusters = 5)
+```
+
+The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$CHC$ClusterRes` list, the sample distance matrix is stored in the `$Ensemble$Samples$CHC$DistanceMatrix` list, and the hierarchical clustering tree is stored in the `$Ensemble$Samples$CHC$HClustTree`. See examples for 5 clusters:
+```{r}
+head(EINS_NCI60$Ensemble$Samples$CHC$ClusterRes$Clusters_5)
+plot(EINS_NCI60$Ensemble$Samples$CHC$HClustTree$Clusters_5)
+```
+
+Multidimensional Scaling ensemble integration followed by hierarchical sample clustering (MDS_HC) combines all the clustering results calculated by the different multi-omics integration methods, and multidimensional scaling is used to obtain sample coordinates. This is followed by hierarchical clustering. 
+```{r}
+EINS_NCI60$run_Ensemble_Sample_MDS_HC(Clusters = 5)
+```
+
+The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$MDS_HC$ClusterRes` list, the MDS embedding is stored in the `$Ensemble$Samples$MDS_HC$MDS` list, the dimension selection arguments and fit are stored in the `$Ensemble$Samples$MDS_HC$DimensionInfo` list, and the hierarchical clustering tree is stored in the `$Ensemble$Samples$MDS_HC$HClustTree`. See examples for 5 clusters:
+```{r}
+head(EINS_NCI60$Ensemble$Samples$MDS_HC$ClusterRes$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$MDS_HC$MDS$Clusters_5$points)
+head(EINS_NCI60$Ensemble$Samples$MDS_HC$DimensionInfo$Clusters_5$StabilityMatrix)
+plot(EINS_NCI60$Ensemble$Samples$MDS_HC$HClustTree$Clusters_5)
+```
+
+Canonical Cluster Analysis (CCA) ensemble integration sample clustering aligns the embedding results from the multi-omics integation methods into a common latent space using pairwise CCA. K-means clustering is then performed on this aligned embedding. A reference embedding for pairwise CCA is required.
+```{r}
+EINS_NCI60$run_Ensemble_Sample_CCA(Clusters = 5, Reference = "MoCluster", Factors = 5)
+```
+
+The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$CCA[[Embedding_nFactors]]$ClusterRes` list, and the aligned embedding matrix is stored in `$Ensemble$Samples$CCA[[Embedding_nFactors]]$EmbeddingMat` list.. See examples for 5 clusters:
+```{r}
+head(EINS_NCI60$Ensemble$Samples$CCA$Embedding_5$ClusterRes$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$CCA$Embedding_5$EmbeddingMat)
+```
+
+Ensemble integration feature hierarchical clustering can be performed with 2 methods: 
+* Average, which calculcates feature distances per multi-omics integration method, and then calculates an average feature distance from these five matrices. Hierarchical clustering is then performed on this average distance matrix.
+* Concatenation, which concatenates the feature weights from all methods into a single matrix, from which the feature distance matrix and factor distance matrix can be calculated.
+
+For this vignette, only Average will be calculated, but by changing "Average" to "Concatenation", the second method can be calculated.
+```{r}
+EINS_NCI60$run_Ensemble_Integration_Feature(Method = "Average", nFactors = 5)
+```
+
+The ensemble integration feature distance matrix is stored in the `$Ensemble$Features$Average$DistanceMatrix` list, and the hierarchical clustering tree is stored in the `$Ensemble$Features$Average$HClustTree`. See examples for 5 factors: 
+```{r}
+head(EINS_NCI60$Ensemble$Features$Average$DistanceMatrix)
+plot(EINS_NCI60$Ensemble$Features$Average$HClustTree)
+```
+
+The ensemble integration feature hierarchical clustering tree can then be cut into clusters, so the feature groups can be assessed.
+```{r}
+EINS_NCI60$run_Feature_Clustering(Clusters = 6, Method = "Average")
+```
+
+The ensemble integration feature cluster assignment is stored in the `$Ensemble$Features$Average$ClusterRes` list. See example for 6 clusters:
+```{r}
+head(EINS_NCI60$Ensemble$Features$Average$ClusterRes)
+```
+
+Using the ensemble integration feature cluster assignments, an overrepresentation analysis can be performed on omics with a genetic background for human samples. This is performed per omics type, as the naming convention can differ between omics datasets. For this dataset, we will only perform overrepresentation analysis for the proteomics dataset.
+```{r}
+EINS_NCI60$run_Over_Represenation(Method = "Average", OmicsName = "Proteomics", GeneNameType = "SYMBOL")
+```
+
+The overrepresentation analysis results are stored per cluster in the `$Ensemble$Features$Average$ORA` list. See example for proteomics features in cluster 3.
+```{r}
+EINS_NCI60$Ensemble$Features$Average$ORA$Proteomics$Cluster_3$Enrichment
+```
+
+##Plots
+
+Multiple visualization options are available in EINS. We will quickly go through the options.
+
+An interactive heatmap can be created per omics dataset, with the sample cluster assignment of a multi-integration method provided on the X-axis.
+```{r}
+EINS_NCI60$plot_Heatmap_Cluster(FeatureClustering = TRUE, MethodResults = "MoCluster")
+```
+
+The heatmaps are stored in the `$Plots$Cluster_Heatmap` list. See example of proteomics dataset with MoCluster sample cluster assignment for 5 clusters.
+```{r}
+EINS_NCI60$Plots$Cluster_Heatmap$MoCluster$Clusters_5$Proteomics
+```
+
+A non-interactive multi-omics heatmap can be created, with sample cluster assignment and metadata annotation on the X-axis.
+```{r}
+EINS_NCI60$plot_Multi_Omics_Heatmap(MetadataFeatures = c("tissue of origin", "Epithelial", "sex", "p53"))
+```
+
+The heatmaps are stored in the `$Plots$Multi_Omics_Heatmap` list. See example with MDS_HC ensemble integration sample cluster assignment for 5 clusters.
+```{r}
+EINS_NCI60$Plots$Multi_Omics_Heatmap$Ensemble$MDS_HC$Clusters_5
+```
+
+An interactive scatterplot of samples in the factor space can be created for some of the multi-omics integration methods. Dots will be colored by cluster and can be shaped by metadata feature.
+```{r}
+EINS_NCI60$plot_Scatterplot(XAxis = 1, YAxis = 2, MetadataFeature = "tissue of origin")
+```
+
+The scatterplots are stored in the `$Plots$Scatterplot` list. See example for MoCluster with 5 factors.
+```{r}
+EINS_NCI60$Plots$Scatterplot$MoCluster$Factors_5
+```
+
+A colored table with cluster assignment and metadata annotation can be created per multi-omics integration method with cluster results and ensemble integration sample clustering.
+```{r}
+EINS_NCI60$plot_Clusters_Metadata(MetadataFeatures = c("tissue of origin", "Epithelial", "sex", "p53"))
+```
+
+The tables are stored in `$Plots$Clusters_Metadata`. See example for MDS ensemble integration sample cluster assignment with 5 clusters.
+```{r}
+EINS_NCI60$Plots$Clusters_Metadata$Ensemble$MDS_HC$Clusters_5
+```
+
+An interactive Sankey plot with the cluster assignment per multi-omics integration method with sample clustering results. This plot is only available if multiple cluster assignments are calculated per method. The samples can be colored with a metadata feature.
+```{r}
+EINS_NCI60$plot_Sankey_Clusters(MetadataFeature = "tissue of origin")
+```
+
+The plots are stored in `$Plots$Sankey_Clusters`. See example for MoCluster cluster assignments.
+```{r}
+EINS_NCI60$Plots$Sankey_Clusters$MoCluster
+```
+
+An interactive Sankey plot with the cluster assignments for multiple multi-omics integration methods with the same number of clusters. This plot is only available if multiple methods have calculated the same number of clusters. The samples can be colored with a metadata feature.
+```{r}
+EINS_NCI60$plot_Sankey_Methods(MetadataFeature = "tissue of origin", Ensemble = TRUE, SNFDistance = "euclidean squared")
+```
+
+The plots are stored in `$Plots$Sankey_Method`. See example for 5 clusters.
+```{r}
+EINS_NCI60$Plots$Sankey_Methods$Selected$Clusters_5
+```
+
+Plots with the features with the top absolute weights per factor per omics type for each multi-omics integration method which calculates feature weights can be created.
+```{r}
+EINS_NCI60$plot_Top_Feature_Weights(nFeatures = 10)
+```
+
+The plots are stored in the `$Plots$Top_Feature_Weights` list. See example for the proteomics dataset analyzed with  MoCluster.
+```{r}
+EINS_NCI60$Plots$Top_Feature_Weights$MoCluster$Factors_5$Proteomics
+```
+
+Enrichment dotplots can be created for the ensemble integration feature clusters on which overrepresentation analysis has been performed.
+```{r}
+EINS_NCI60$plot_Enrich_Dot(Method = "Average", Categories = 5)
+```
+
+The plots are stored in the `$Plots$ORA_Dot` list. See example for the proteomics features in cluster 3.
+```{r}
+EINS_NCI60$Plots$ORA_Dot$Average$Proteomics$Cluster_3
+```
+
+Dendrograms can be created for multiple different hierarchical clustering results. 
+
+Single omics hierarchical clustering results, with colored sample labels and sample metadata features in colored bars below the plots.
+```{r}
+EINS_NCI60$plot_Dendrogram(Data = "Single", MetadataHeight = c(-5, -5, -5), MetadataFeatures = c("tissue of origin", "Epithelial", "p53"), LabelMetadata = "tissue of origin", LabelSize = 0.5, BarLabelSize = 0.5)
+```
+
+CHC Ensemble integration sample clustering results, with colored sample labels and sample metadata features in colored bars below the plot.
+```{r}
+EINS_NCI60$plot_Dendrogram(Data = "Ensemble CHC", MetadataHeight = -4, Clusters = 5, MetadataFeatures = c("tissue of origin", "Epithelial", "p53"), LabelMetadata = "tissue of origin", LabelSize = 0.5, BarLabelSize = 0.5)
+```
+
+MDS_HC Ensemble integration sample clustering results, with colored sample labels and sample metadata features in colored bars below the plot.
+```{r}
+EINS_NCI60$plot_Dendrogram(Data = "Ensemble MDS_HC", MetadataHeight = -1.5, Clusters = 5, MetadataFeatures = c("tissue of origin", "Epithelial", "p53"), LabelMetadata = "tissue of origin", LabelSize = 0.5, BarLabelSize = 0.5)
+```
+
+Ensemble integration feature clustering results, with colored bars indicating the omics type below the plot.
+```{r}
+EINS_NCI60$plot_Dendrogram(Data = "Ensemble Feature Average", MetadataHeight = -0.25)
+```
+
+Feature clustering results per multi-omics integration method, with colored bars indicating the omics type below the plot.
+```{r}
+EINS_NCI60$plot_Dendrogram(Data = "Multi-Omics Feature", MetadataHeight = -0.25)
+```
+
+Ensemble integration factor clustering results are available if `$run_Ensemble_Integration_Feature()` is performed with Method = "Concatenation.
+
+#Optional methods
+Optimal sample and feature cluster numbers can be calculated. These methods are computationally expensive, and will therefore not be performed in this vignette. The optimal sample cluster number for the integrated data can be calculated using `$run_Optimal_Cluster_Number()`, the optimal feature cluster number for ensemble integration feature data can be calculated using `$run_Feature_Optimal_Cluster()`, and the optimal factor cluster number for ensemble integration factor data calculated with Method = "Concatenation can be calculated with `$run_Factor_Optimal_Cluster()`.
+
