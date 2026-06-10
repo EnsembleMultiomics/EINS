@@ -1892,16 +1892,16 @@ Ensemble_Integration_Suite <- R6::R6Class(
 
     #----------------------------------------------------------------ENSEMBLE METHODS------------
 
-    #Ensemble sample clustering by Multidimensional Scaling (MDS)
+    #Ensemble sample clustering by Consensus Hierarchical Clustering (CHC)
     #' @description
-        #' Create an ensemble clustering result by combining the clustering
-        #' results from MoCluster, MCIA, jNMF, iNMF, LRAcluster, COCA, MOFA,
-        #' SNF and GAUDI. Borrows the idea of consensus cluster, by creating a
-        #' sample similarity matrix counting the number of times samples cluster
-        #' together. Hierarchical clustering is then performed on this matrix.
-        #' Provides a more robust clustering result when performed with
-        #' multiple cluster assignment, which can be achieved by running the
-        #' multi-omics integration methods with a range of `Clusters`.
+    #' Create an ensemble clustering result by combining the clustering
+    #' results from MoCluster, MCIA, jNMF, iNMF, LRAcluster, COCA, MOFA,
+    #' SNF and GAUDI. Borrows the idea of consensus cluster, by creating a
+    #' sample similarity matrix counting the number of times samples cluster
+    #' together. Hierarchical clustering is then performed on this matrix.
+    #' Provides a more robust clustering result when performed with
+    #' multiple cluster assignment, which can be achieved by running the
+    #' multi-omics integration methods with a range of `Clusters`.
     #' @param Clusters Number of clusters to create from the hierarchical
     #' clustering result.
     #' @param SNFDistance Which distance used to calculate SNF results to be
@@ -1920,12 +1920,12 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' `"complete"` (default), `"average"`, `"mcquitty"`, `"median"` or
     #' `"centroid"`.
     #' @returns A list of results. Sample distance matrix is stored in
-    #' $Ensemble$Samples$MDS$DistanceMatrix by cluster number. Sample hierarchical
-    #' clustering tree is stored in $Ensemble$Samples$MDS$HClust by cluster number.
+    #' $Ensemble$Samples$CHC$DistanceMatrix by cluster number. Sample hierarchical
+    #' clustering tree is stored in $Ensemble$Samples$CHC$HClust by cluster number.
     #' Ensemble sample cluster assignment is stored in
-    #' $Ensemble$Samples$MDS$ClusterRes by cluster number. Sample dendrogram is
-    #' stored in $Plots$Dendrogram$Ensemble$MDS by cluster number.
-    run_Ensemble_Sample_MDS = function(Clusters = NULL,
+    #' $Ensemble$Samples$CHC$ClusterRes by cluster number. Sample dendrogram is
+    #' stored in $Plots$Dendrogram$Ensemble$CHC by cluster number.
+    run_Ensemble_Sample_CHC = function(Clusters = NULL,
                                        SNFDistance = "euclidean squared",
                                        Distance = "euclidean",
                                        MinkowskiPower = NULL,
@@ -1949,22 +1949,173 @@ Ensemble_Integration_Suite <- R6::R6Class(
       Ensemble_Data = Ensemble_Cluster_Data(Data = ClusterResults)
       Ensemble_Sample_IDs = rownames(Ensemble_Data[[1]])
 
-      Ensemble_Clustering = Ensemble_Cluster(MethodClusterResults = Ensemble_Data,
-                                             Sample_IDs = Ensemble_Sample_IDs,
-                                             Distance = Distance,
-                                             MinkowskiPower = MinkowskiPower,
-                                             Linkage = Linkage,
-                                             Clusters = Clusters)
+      Ensemble_Clustering = Ensemble_Cluster_CHC(MethodClusterResults = Ensemble_Data,
+                                                 Sample_IDs = Ensemble_Sample_IDs,
+                                                 Distance = Distance,
+                                                 MinkowskiPower = MinkowskiPower,
+                                                 Linkage = Linkage,
+                                                 Clusters = Clusters)
       ClusterRes = data.frame(row.names = Ensemble_Sample_IDs,
                               Cluster = Ensemble_Clustering$ClusterRes,
                               stringsAsFactors = FALSE)
       EnsembleDendro = stats::as.dendrogram(Ensemble_Clustering$HClustRes)
       EnsembleClustnum = paste0("Clusters_", Clusters)
-      self$Ensemble$Samples$MDS$ClusterRes[[EnsembleClustnum]] = ClusterRes
-      self$Ensemble$Samples$MDS$DistanceMatrix[[EnsembleClustnum]] = Ensemble_Clustering$DistMat
-      self$Ensemble$Samples$MDS$HClustTree[[EnsembleClustnum]] = Ensemble_Clustering$HClustRes
-      self$Plots$Dendrogram$Ensemble$MDS[[EnsembleClustnum]] = EnsembleDendro
+      self$Ensemble$Samples$CHC$ClusterRes[[EnsembleClustnum]] = ClusterRes
+      self$Ensemble$Samples$CHC$DistanceMatrix[[EnsembleClustnum]] = Ensemble_Clustering$DistMat
+      self$Ensemble$Samples$CHC$HClustTree[[EnsembleClustnum]] = Ensemble_Clustering$HClustRes
+      self$Plots$Dendrogram$Ensemble$CHC[[EnsembleClustnum]] = EnsembleDendro
     },
+
+    #Ensemble sample clustering by Multidimensional Scaling (MDS)
+    #' @description
+        #' Create an ensemble clustering result by combining the clustering
+        #' results from MoCluster, MCIA, jNMF, iNMF, LRAcluster, COCA, MOFA,
+        #' SNF and GAUDI. Borrows the idea of consensus cluster, by creating a
+        #' sample similarity matrix counting the number of times samples cluster
+        #' together. Multidimensional Scaling is then performed on this matrix.
+        #' Using the MDS embedding, k-means clustering can be performed to get
+        #' cluster assignments. Provides a more robust clustering result when
+        #' performed with multiple cluster assignment, which can be achieved by
+        #' running the multi-omics integration methods with a range of `Clusters`.
+    #' @param Clusters Number of clusters to create from the hierarchical
+    #' clustering result.
+    #' @param SNFDistance Which distance used to calculate SNF results to be
+    #' included in the ensemble clustering. This is needed to reduce the impact
+    #' of SNF on the ensemble clustering assignment. Must be one of:
+    #' `"euclidean squared"` (default), `"euclidean"`, `"manhattan"`,
+    #' `"minkowksi 0.25"`, `"minkowski 0.5"`, `"minkowski 3"` or `"minkowski 4"`.
+    #' @param Distance Distance Distance metric to be used for the calculation of the
+    #' feature distance matrices. Must be one of: `"euclidean"` (default),
+    #' `"maximum"`, `"manhattan"`, `"canberra"`, `"binary"` or `"minkowski"`.
+    #' If `"minkowski"` is selected, argument `"MinkowskiPower"` needs to be
+    #' included.
+    #' @param MinkowskiPower Power of the Minkowski distance. Default is NULL.
+    #' @param CandidateDimensions Number of MDS dimensions to be tested. Default is
+    #' 2:10 dimensions.
+    #' @param StabilityEpsilon How much the selected leave-one-method-out run may
+    #' diverge from the maximum observed stability, default is 0.02.
+    #' @param AddConstant Logical, indicating if an additive constant c* should
+    #' be computed, and added to the non-diagonal dissimilarities such that the
+    #' modified dissimilarities are Euclidean.
+    #' @param Linkage Agglomeration method to be used for the hierarchical
+    #' clustering. Must be one of: `"ward.D"`, `"ward.D2"` (default), `"single"`,
+    #' `"complete"`, `"average"`, `"mcquitty"`, `"median"` or `"centroid"`.
+    #' @returns A list of results. Ensemble sample cluster assignment is stored in
+    #' $Ensemble$Samples$MDS_HC$ClusterRes by cluster number. Sample consensus
+    #' matrix is stored in $Ensemble$Samples$MDS_HC$ConsensusMatrix by cluster
+    #' number. Sample dissimilarity matrix is stored in
+    #' $Ensemble$Samples$MDS_HC$DissimilarityMatrix by cluster number. MDS
+    #' embedding is stored in $Ensemble$Samples$MDS_HC$Embed by cluster number.
+    #' MDS embedding distance matrix is stored in
+    #' $Ensemble$Samples$MDS_HC$EmbedDistanceMatrix by cluster number. Full MDS
+    #' fit is stored in $Ensemble$Samples$MDS_HC$MDS by cluster number. MDS
+    #' dimension selection arguments and results are stored in
+    #' $Ensemble$Samples$MDS_HC$DimensionInfo by cluster number. Hierarchical
+    #' clustering tree is stored in $Ensemble$Samples$MDS_HC$HClustTree by
+    #' cluster number. Sample dendrogram is stored in
+    #' $Plots$Dendrogram$Ensemble$MDS_HC by cluster number.
+    run_Ensemble_Sample_MDS_HC = function(Clusters = NULL,
+                                          SNFDistance = "euclidean squared",
+                                          Distance = "euclidean",
+                                          MinkowskiPower = NULL,
+                                          CandidateDimensions = c(2:10),
+                                          StabilityEpsilon = 0.02,
+                                          AddConstant = TRUE,
+                                          Linkage = "ward.D2"){
+
+        Ens_Clust_Methods = names(self$Multi_Omics$ClusterRes)
+        ClusterResults = list()
+
+        for(method in Ens_Clust_Methods){
+          if(method == "SNF"){
+            ClusterResults$SNF = list()
+            Ens_Clust_SNF_Distance = names(self$Multi_Omics$ClusterRes$SNF)
+            for(distance in Ens_Clust_SNF_Distance){
+              if(distance == SNFDistance){
+                ClusterResults$SNF[[distance]] = self$Multi_Omics$ClusterRes$SNF[[distance]]
+              }
+            }
+          }else{
+            ClusterResults[[method]] = self$Multi_Omics$ClusterRes[[method]]
+          }
+        }
+
+        Ensemble_Data = Ensemble_Cluster_Data(Data = ClusterResults)
+
+        Ensemble_Sample_IDs = rownames(Ensemble_Data[[1]])
+
+        Ensemble_Clustering = Ensemble_Cluster_MDS_HC(MethodClusterResults = Ensemble_Data,
+                                                      Sample_IDs = Ensemble_Sample_IDs,
+                                                      Distance = Distance,
+                                                      MinkowskiPower = MinkowskiPower,
+                                                      CandidateDimensions = CandidateDimensions,
+                                                      StabilityEpsilon = StabilityEpsilon,
+                                                      AddConstant = AddConstant,
+                                                      Linkage = Linkage,
+                                                      Clusters = Clusters)
+
+        ClusterRes = data.frame(row.names = Ensemble_Sample_IDs,
+                                Cluster = Ensemble_Clustering$ClusterRes,
+                                stringsAsFactors = FALSE)
+
+        EnsembleClustnum = paste0("Clusters_", Clusters)
+
+        if(is.null(self$Ensemble$Samples$MDS_HC)){
+          self$Ensemble$Samples$MDS_HC = list()
+        }
+
+        if(is.null(self$Ensemble$Samples$MDS_HC$ClusterRes)){
+          self$Ensemble$Samples$MDS_HC$ClusterRes = list()
+        }
+
+        if(is.null(self$Ensemble$Samples$MDS_HC$DistanceMatrix)){
+          self$Ensemble$Samples$MDS_HC$DistanceMatrix = list()
+        }
+
+        if(is.null(self$Ensemble$Samples$MDS_HC$ConsensusMatrix)){
+          self$Ensemble$Samples$MDS_HC$ConsensusMatrix = list()
+        }
+
+        if(is.null(self$Ensemble$Samples$MDS_HC$DissimilarityMatrix)){
+          self$Ensemble$Samples$MDS_HC$DissimilarityMatrix = list()
+        }
+
+        if(is.null(self$Ensemble$Samples$MDS_HC$Embed)){
+          self$Ensemble$Samples$MDS_HC$Embed = list()
+        }
+
+        if(is.null(self$Ensemble$Samples$MDS_HC$EmbedDistanceMatrix)){
+          self$Ensemble$Samples$MDS_HC$EmbedDistanceMatrix = list()
+        }
+
+        if(is.null(self$Ensemble$Samples$MDS_HC$MDS)){
+          self$Ensemble$Samples$MDS_HC$MDS = list()
+        }
+
+        if(is.null(self$Ensemble$Samples$MDS_HC$DimensionInfo)){
+          self$Ensemble$Samples$MDS_HC$DimensionInfo = list()
+        }
+
+        if(is.null(self$Ensemble$Samples$MDS_HC$HClustTree)){
+          self$Ensemble$Samples$MDS_HC$HClustTree = list()
+        }
+
+        if(is.null(self$Plots$Dendrogram$Ensemble$MDS_HC)){
+          self$Plots$Dendrogram$Ensemble$MDS_HC = list()
+        }
+
+        self$Ensemble$Samples$MDS_HC$ClusterRes[[EnsembleClustnum]] = ClusterRes
+        self$Ensemble$Samples$MDS_HC$DistanceMatrix[[EnsembleClustnum]] = Ensemble_Clustering$DistMat
+        self$Ensemble$Samples$MDS_HC$ConsensusMatrix[[EnsembleClustnum]] = Ensemble_Clustering$ConsensusMatrix
+        self$Ensemble$Samples$MDS_HC$DissimilarityMatrix[[EnsembleClustnum]] = Ensemble_Clustering$DissimilarityMatrix
+        self$Ensemble$Samples$MDS_HC$Embed[[EnsembleClustnum]] = Ensemble_Clustering$Embed
+        self$Ensemble$Samples$MDS_HC$EmbedDistanceMatrix[[EnsembleClustnum]] = Ensemble_Clustering$EmbedDist
+        self$Ensemble$Samples$MDS_HC$MDS[[EnsembleClustnum]] = Ensemble_Clustering$MDS
+        self$Ensemble$Samples$MDS_HC$DimensionInfo[[EnsembleClustnum]] = Ensemble_Clustering$DimensionInfo
+        self$Ensemble$Samples$MDS_HC$HClustTree[[EnsembleClustnum]] = Ensemble_Clustering$HClustRes
+        EnsembleDendro = stats::as.dendrogram(Ensemble_Clustering$HClustRes)
+        self$Plots$Dendrogram$Ensemble$MDS_HC[[EnsembleClustnum]] = EnsembleDendro
+      },
 
     #Ensemble sample clustering by Canonical Correlation Analysis (CCA)
     #' @description
@@ -2493,9 +2644,9 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' features will be ordered as in the preprocessed datasets.
     #' @param MethodResults For which clustering assignment the heatmap is to be
     #' plotted. Must be one of: `"all"` (default), `"MoCluster"`, `"jNMF"`, `"iNMF"`,
-    #' `"LRAcluster"`, `"COCA"`, `"GAUDI"`, `"SNF"`, `"MDS"` or `"CCA"`. If all is
-    #' selected, heatmaps with cluster assignments are created for all run
-    #' methods.
+    #' `"LRAcluster"`, `"COCA"`, `"GAUDI"`, `"SNF"`, `"CHC"`, `"MDS_HC"` or `"CCA"`.
+    #' If all is selected, heatmaps with cluster assignments are created for all
+    #' run methods.
     #' @param YFontSize Font size of the feature labels on the Y-axis. Default
     #' is 5.
     #' @param XFontSize Font size of the sample labels on the X-axis. Default
@@ -2592,20 +2743,37 @@ Ensemble_Integration_Suite <- R6::R6Class(
       }
 
       #Heatmap for consensus clustering result
-      if(!is.null(self$Ensemble$Samples$MDS$ClusterRes) & (MethodResults == "MDS" | MethodResults == "all")){
-        ConsensusClustNum = names(self$Ensemble$Samples$MDS$ClusterRes)
+      if(!is.null(self$Ensemble$Samples$CHC$ClusterRes) & (MethodResults == "CHC" | MethodResults == "all")){
+        ConsensusClustNum = names(self$Ensemble$Samples$CHC$ClusterRes)
         for(clustnum in ConsensusClustNum){
-          ClustData = self$Ensemble$Samples$MDS$ClusterRes[[clustnum]]
+          ClustData = self$Ensemble$Samples$CHC$ClusterRes[[clustnum]]
           n = strsplit(clustnum, split = "_")[[1]][2]
           for(omics in HeatmapOmics){
-            Title = paste0("Heatmap of ", omics, ", ", n, " clusters by MDS ensemble")
+            Title = paste0("Heatmap of ", omics, ", ", n, " clusters by CHC ensemble")
             Plot = Heatmap_Cluster(Data = Data[[omics]],
                                    SampleClusters = ClustData,
                                    FeatureClusters = FeatureClustering,
                                    YFontSize = YFontSize,
                                    XFontSize = XFontSize,
                                    Title = Title)
-            self$Plots$Cluster_Heatmap$Ensemble$MDS[[clustnum]][[omics]] = Plot
+            self$Plots$Cluster_Heatmap$Ensemble$CHC[[clustnum]][[omics]] = Plot
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$MDS_HC$ClusterRes) & (MethodResults == "MDS_HC" | MethodResults == "all")){
+        ConsensusClustNum = names(self$Ensemble$Samples$MDS_HC$ClusterRes)
+        for(clustnum in ConsensusClustNum){
+          ClustData = self$Ensemble$Samples$MDS_HC$ClusterRes[[clustnum]]
+          n = strsplit(clustnum, split = "_")[[1]][2]
+          for(omics in HeatmapOmics){
+            Title = paste0("Heatmap of ", omics, ", ", n, " clusters by MDS_HC ensemble")
+            Plot = Heatmap_Cluster(Data = Data[[omics]],
+                                   SampleClusters = ClustData,
+                                   FeatureClusters = FeatureClustering,
+                                   YFontSize = YFontSize,
+                                   XFontSize = XFontSize,
+                                   Title = Title)
+            self$Plots$Cluster_Heatmap$Ensemble$MDS_HC[[clustnum]][[omics]] = Plot
           }
         }
       }
@@ -2684,7 +2852,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
                                                           LegendNames = LegendNames,
                                                           MetadataColumn = MetadataFeatures,
                                                           MetaData = Metadata)
-              self$Plots$Multi_Omics_Heatmap$SNF[[distance]][[clust]] = ClusterHeatmap$Heatmap
+              self$Plots$Multi_Omics_Heatmap$SNF[[distance]][[clust]] = ClusterHeatmap
             }
           }
         }else if(method == "GAUDI"){
@@ -2698,7 +2866,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
                                                           LegendNames = LegendNames,
                                                           MetadataColumn = MetadataFeatures,
                                                           MetaData = Metadata)
-              self$Plots$Multi_Omics_Heatmap$GAUDI[[clustmethod]][[clust]] = ClusterHeatmap$Heatmap
+              self$Plots$Multi_Omics_Heatmap$GAUDI[[clustmethod]][[clust]] = ClusterHeatmap
             }
           }
         }else{
@@ -2710,22 +2878,34 @@ Ensemble_Integration_Suite <- R6::R6Class(
                                                         LegendNames = LegendNames,
                                                         MetadataColumn = MetadataFeatures,
                                                         MetaData = Metadata)
-            self$Plots$Multi_Omics_Heatmap[[method]][[clust]] = ClusterHeatmap$Heatmap
+            self$Plots$Multi_Omics_Heatmap[[method]][[clust]] = ClusterHeatmap
           }
         }
       }
 
       #ensemble clustering multi-omics heatmap
-      if(!is.null(self$Ensemble$Samples$MDS$ClusterRes)){
-        EnsembleClustNum = names(self$Ensemble$Samples$MDS$ClusterRes)
+      if(!is.null(self$Ensemble$Samples$CHC$ClusterRes)){
+        EnsembleClustNum = names(self$Ensemble$Samples$CHC$ClusterRes)
         for(clust in EnsembleClustNum){
-          ClustRes = self$Ensemble$Samples$MDS$ClusterRes[[clust]]
+          ClustRes = self$Ensemble$Samples$CHC$ClusterRes[[clust]]
           ClusterHeatmap = MultiOmicsHeatmapClustered(OmicsData = Data,
                                                       ClusterRes = ClustRes,
                                                       LegendNames = LegendNames,
                                                       MetadataColumn = MetadataFeatures,
                                                       MetaData = Metadata)
-          self$Plots$Multi_Omics_Heatmap$Ensemble$MDS[[clust]] = ClusterHeatmap
+          self$Plots$Multi_Omics_Heatmap$Ensemble$CHC[[clust]] = ClusterHeatmap
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$MDS_HC$ClusterRes)){
+        EnsembleClustNum = names(self$Ensemble$Samples$MDS_HC$ClusterRes)
+        for(clust in EnsembleClustNum){
+          ClustRes = self$Ensemble$Samples$MDS_HC$ClusterRes[[clust]]
+          ClusterHeatmap = MultiOmicsHeatmapClustered(OmicsData = Data,
+                                                      ClusterRes = ClustRes,
+                                                      LegendNames = LegendNames,
+                                                      MetadataColumn = MetadataFeatures,
+                                                      MetaData = Metadata)
+          self$Plots$Multi_Omics_Heatmap$Ensemble$MDS_HC[[clust]] = ClusterHeatmap
         }
       }
       if(!is.null(self$Ensemble$Samples$CCA)){
@@ -2887,14 +3067,24 @@ Ensemble_Integration_Suite <- R6::R6Class(
       }
 
       #ensemble clustering results
-      if(!is.null(self$Ensemble$Samples$MDS$ClusterRes)){
-        ClustersMetadataEnsemble = names(self$Ensemble$Samples$MDS$ClusterRes)
+      if(!is.null(self$Ensemble$Samples$CHC$ClusterRes)){
+        ClustersMetadataEnsemble = names(self$Ensemble$Samples$CHC$ClusterRes)
         for(clustnum in ClustersMetadataEnsemble){
-          ClustData = self$Ensemble$Samples$MDS$ClusterRes[[clustnum]]
+          ClustData = self$Ensemble$Samples$CHC$ClusterRes[[clustnum]]
           Plot = Plot_Clusters_Metadata(MetadataColumns = MetadataFeatures,
                                         MatchedMetadata = MetaData,
                                         ClusterResults = ClustData)
-          self$Plots$Clusters_Metadata$Ensemble$MDS[[clustnum]] = Plot
+          self$Plots$Clusters_Metadata$Ensemble$CHC[[clustnum]] = Plot
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$MDS_HC$ClusterRes)){
+        ClustersMetadataEnsemble = names(self$Ensemble$Samples$MDS_HC$ClusterRes)
+        for(clustnum in ClustersMetadataEnsemble){
+          ClustData = self$Ensemble$Samples$MDS_HC$ClusterRes[[clustnum]]
+          Plot = Plot_Clusters_Metadata(MetadataColumns = MetadataFeatures,
+                                        MatchedMetadata = MetaData,
+                                        ClusterResults = ClustData)
+          self$Plots$Clusters_Metadata$Ensemble$MDS_HC[[clustnum]] = Plot
         }
       }
       if(!is.null(self$Ensemble$Samples$CCA)){
@@ -2988,8 +3178,9 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' samples should be colored. The metadata feature need to be available
     #' in the metadata files for all omics types.
     #' @param Ensemble Whether to include the ensemble sample clustering results
-    #' to the Sankey plot. Must run `run_Ensemble_Sample_MDS` or
-    #' `run_Ensemble_Sample_CCA` first. Default is `TRUE`.
+    #' to the Sankey plot. Must run `run_Ensemble_Sample_CHC`,
+    #' `run_Ensemble_Sample_MDS_HC` or `run_Ensemble_Sample_CCA` first. Default is
+    #' `TRUE`.
     #' @param SNFDistance Which SNF distance calculated cluster assignment
     #' should be included in the plot comparing different methods. To compare
     #' the cluster assignments between SNF distances, an SNF-only Sankey plot
@@ -3085,10 +3276,15 @@ Ensemble_Integration_Suite <- R6::R6Class(
       #Add ensemble clustering to rest and full plots
       if(Ensemble == TRUE){
         #Rest ensemble
-        MDSClustNum = names(self$Ensemble$Samples$MDS$ClusterRes)
+        CHCClustNum = names(self$Ensemble$Samples$CHC$ClusterRes)
+        for(clustnum in CHCClustNum){
+          Sankey_Split_Rest_Data[[clustnum]]$EnsembleCHC = self$Ensemble$Samples$CHC$ClusterRes[[clustnum]]
+          Sankey_Split_Full_Data[[clustnum]]$EnsembleCHC = self$Ensemble$Samples$CHC$ClusterRes[[clustnum]]
+        }
+        MDSClustNum = names(self$Ensemble$Samples$MDS_HC$ClusterRes)
         for(clustnum in MDSClustNum){
-          Sankey_Split_Rest_Data[[clustnum]]$EnsembleMDS = self$Ensemble$Samples$MDS$ClusterRes[[clustnum]]
-          Sankey_Split_Full_Data[[clustnum]]$EnsembleMDS = self$Ensemble$Samples$MDS$ClusterRes[[clustnum]]
+          Sankey_Split_Rest_Data[[clustnum]]$EnsembleMDS = self$Ensemble$Samples$MDS_HC$ClusterRes[[clustnum]]
+          Sankey_Split_Full_Data[[clustnum]]$EnsembleMDS = self$Ensemble$Samples$MDS_HC$ClusterRes[[clustnum]]
         }
         CCAFactNum = names(self$Ensemble$Samples$CCA)
         for(factnum in CCAFactNum){
@@ -3260,7 +3456,9 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' @param Data Which previously created dendrogram to plot. Must be one of:
     #'   * `"Single"`: Single omics sample hierarchical clustering results. Will
     #'   plot the dendrograms for all omics types provided.
-    #'   * `"Ensemble MDS"`: Ensemble MDS sample hierarchical clustering results.
+    #'   * `"Ensemble CHC"`: Ensemble CHC sample hierarchical clustering results.
+    #'   * `"Ensemble MDS_HC"`: Ensemble MDS_HC sample hierarchical clustering
+    #'   results.
     #'   * `"Ensemble Factor"`: Ensemble factor hierarchical clustering results,
     #'   as calculated with `run_Feature_Ensemble_HClust` with `Method`
     #'   `"Concatenation"`.
@@ -3278,35 +3476,36 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' @param MetadataFeatures Names of the sample metadata features to be
     #' included in colored bars below the dendrogram. A string vector with the
     #' names of the metadata features as in the metadata files should be
-    #' provided. Can be used in `Data` = `"Single"` and `Data` =
-    #' `"Ensemble MDS"`.
+    #' provided. Can be used in `Data` = `"Single"`,
+    #' `Data` = `"Ensemble CHC"` and `Data` = `"Ensemble MDS_HC"`.
     #' @param LabelMetadata Name of the metadata feature for which the sample
     #' labels should be colored. Must be a sting with the name of the metadata
-    #' feature as in the metadata files. Can be used in `Data` = `"Single"` and
-    #' `Data` = `"Ensemble MDS"`.
+    #' feature as in the metadata files. Can be used in `Data` = `"Single"`,
+    #' `Data` = `"Ensemble CHC"` and `Data` = `"Ensemble MDS_HC"`.
     #' @param MetadataHeight Height of the colored bars with metadata
     #' information. Default is 0. If 0 puts the colored bars in the dendrogram,
-    #' choose a negative integer. For `Data` = `"Ensemble MDS"`,
-    #' `"Ensemble Feature Average"` or `"Ensemble Feature Concatenation"`, a
-    #' single integer should be provided. For `Data` = `"Single"` or
-    #' `"Multi-Omics Feature"`, a vector of integers with the same length as the
-    #' number of omics datasets must be provided.
+    #' choose a negative integer. For `Data` = `"Ensemble CHC"`,
+    #' `"Ensemble MDS_HC"`, `"Ensemble Feature Average"` or
+    #' `"Ensemble Feature Concatenation"`, a single integer should be provided.
+    #' For `Data` = `"Single"` or `"Multi-Omics Feature"`, a vector of integers
+    #' with the same length as the number of omics datasets must be provided.
     #' @param LabelSize Size of the label beneath the dendrogram. Default is 1.
     #' @param BarLabelSize Size of the label of the colored bars. Default is 1.
     #' @returns A single or multiple dendrograms. If `Data` = `"Single"`, a
     #' sample dendrogram per omics type is returned, with colored bars with
-    #' metadata features below each dendrogram. If `Data` = `"Ensemble MDS"`,
+    #' metadata features below each dendrogram. If `Data` = `"Ensemble CHC"`,
     #' a sample dendrogram is returned, with colored bars with metadata features
-    #' below the dendrogram. If `Data` = `"Ensemble Factor"`, a factor
-    #' dendrogram is returned. If `Data` =  `"Ensemble Feature Average"`, a
-    #' feature dendrogram is returned, with a colored bar indicating the feature
-    #' omics type below the dendrogram. If `Data` =
-    #' `"Ensemble Feature Concatenation"`, a feature dendrogram is returned,
+    #' below the dendrogram. If `Data` = `"Ensemble MDS_HC"`, a sample dendrogram
+    #' is returned, with colored bars with metadata features below the dendrogram.
+    #' If `Data` = `"Ensemble Factor"`, a factor dendrogram is returned. If
+    #' `Data` =  `"Ensemble Feature Average"`, a feature dendrogram is returned,
     #' with a colored bar indicating the feature omics type below the dendrogram.
-    #' If `Data` = `"Multi-Omics Feature"`, a feature dendrogram per multi-omics
-    #' integration method is returned, with colored bars indicating the feature
-    #' omics type below each dendrogram.
-    plot_Dendrogram = function(Data, #Single, Ensemble Sample, Ensemble Factor, Ensemble Feature Av, Ensemble Feature Concat
+    #' If `Data` = `"Ensemble Feature Concatenation"`, a feature dendrogram is
+    #' returned, with a colored bar indicating the feature omics type below the
+    #' dendrogram. If `Data` = `"Multi-Omics Feature"`, a feature dendrogram per
+    #' multi-omics integration method is returned, with colored bars indicating
+    #' the feature omics type below each dendrogram.
+    plot_Dendrogram = function(Data, #Single, Ensemble CHC, Ensemble MDS_HC, Ensemble Factor, Ensemble Feature Av, Ensemble Feature Concat
                                Clusters = NULL,
                                MetadataFeatures,
                                LabelMetadata,
@@ -3355,15 +3554,51 @@ Ensemble_Integration_Suite <- R6::R6Class(
 
           }
         }
-      } else if(Data == "Ensemble MDS"){
-        if(is.null(self$Plots$Dendrogram$Ensemble$MDS)){
-          stop("No ensemble clustering results, run run_Ensemble_MDS first")
+      } else if(Data == "Ensemble CHC"){
+        if(is.null(self$Plots$Dendrogram$Ensemble$CHC)){
+          stop("No ensemble clustering results, run run_Ensemble_CHC first")
         } else{
-          DendroList = self$Plots$Dendrogram$Ensemble$MDS
+          DendroList = self$Plots$Dendrogram$Ensemble$CHC
           Meta = Match_Metadata(self$Omics$Metadata)
           Clusterings = names(DendroList)
           for(Clust in Clusterings){
-            Title = "Ensemble MDS sample clustering"
+            Title = "Ensemble CHC sample clustering"
+            Dendro = DendroList[[Clust]]
+            Colored_Meta = Dendrogram_Sample_Meta(MetadataFeatures = MetadataFeatures,
+                                                  Metadata = Meta,
+                                                  Dendrogram = Dendro,
+                                                  LabelMetadata = LabelMetadata)
+            if(is.null(Clusters)){
+              Dendro |> dendextend::set("labels_colors", Colored_Meta$Label) |>
+                dendextend::set("labels_cex", LabelSize) |>
+                plot(main = Title)
+              dendextend::colored_bars(colors = Colored_Meta$Vector,
+                                       dend = Dendro,
+                                       rowLabels = colnames(Colored_Meta$Vector),
+                                       cex.rowLabels = BarLabelSize,
+                                       y_shift = MetadataHeight)
+            }else{
+              Dendro |> dendextend::set("labels_colors", Colored_Meta$Label) |>
+                dendextend::set("branches_k_color", k = Clusters) |>
+                dendextend::set("labels_cex", LabelSize) |>
+                plot(main = Title)
+              dendextend::colored_bars(colors = Colored_Meta$Vector,
+                                       dend = Dendro,
+                                       rowLabels = colnames(Colored_Meta$Vector),
+                                       cex.rowLabels = BarLabelSize,
+                                       y_shift = MetadataHeight)
+            }
+          }
+        }
+      } else if(Data == "Ensemble MDS_HC"){
+        if(is.null(self$Plots$Dendrogram$Ensemble$MDS_HC)){
+          stop("No ensemble clustering results, run run_Ensemble_MDS_HC first")
+        } else{
+          DendroList = self$Plots$Dendrogram$Ensemble$MDS_HC
+          Meta = Match_Metadata(self$Omics$Metadata)
+          Clusterings = names(DendroList)
+          for(Clust in Clusterings){
+            Title = "Ensemble MDS_HC sample clustering"
             Dendro = DendroList[[Clust]]
             Colored_Meta = Dendrogram_Sample_Meta(MetadataFeatures = MetadataFeatures,
                                                   Metadata = Meta,
@@ -3518,7 +3753,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
           }
         }
       }else{
-        stop("Unknown data type, please select one of the following: Single, Ensemble MDS, Ensemble Factor, Ensemble Feature Average, Ensemble Feature Concatenation, Multi-Omics Feature")
+        stop("Unknown data type, please select one of the following: Single, Ensemble CHC, Ensemble MDS_HC, Ensemble Factor, Ensemble Feature Average, Ensemble Feature Concatenation, Multi-Omics Feature")
       }
     },
 
