@@ -78,9 +78,10 @@ EINS_NCI60$run_MCIA(Components = 5, PerformCluster = TRUE, Clusters = 2:8)
 
 From the multi-omics integration results, an ensemble can be created for both sample subtyping and biomarker discovery.
 
-Both Multidimensional Scaling (MDS) and Canonical Correlation Analysis can be performed to ensemble sample subtypes from multi-omics clustering results. The ensemble sample results can be found in the `$Ensemble$Samples` list.
+Consensus Hierarchical Clustering (CHC), Multidimensional Scaling followed by Hierarchical Clustering (MDS_HC) and Canonical Correlation Analysis can be performed to ensemble sample subtypes from multi-omics clustering results. The ensemble sample results can be found in the `$Ensemble$Samples` list.
 ```{r ensemble sample subtypes, warning=FALSE}
-EINS_NCI60$run_Ensemble_Sample_MDS(Clusters = 5)
+EINS_NCI60$run_Ensemble_Sample_CHC(Clusters = 5)
+EINS_NCI60$run_Ensemble_Sample_MDS_HC(Clusters = 5)
 EINS_NCI60$run_Ensemble_Sample_CCA(Clusters = 5, Reference = "MoCluster", Factors = 5)
 ```
 
@@ -96,7 +97,7 @@ Multiple visualization options are available in EINS. We will highlight 2 exampl
 A non-interactive multi-omics heatmap can be created, with sample cluster assignment for the different methods and metadata annotation on the X-axis.
 ```{r multi-omics heatmap, fig.height=7.5}
 EINS_NCI60$plot_Multi_Omics_Heatmap(MetadataFeatures = c("tissue of origin", "Epithelial", "sex", "p53"))
-EINS_NCI60$Plots$Multi_Omics_Heatmap$Ensemble$MDS$Clusters_5
+EINS_NCI60$Plots$Multi_Omics_Heatmap$Ensemble$MDS_HC$Clusters_5
 ```
 
 A Sankey plot with the cluster assignments for multiple multi-omics integration methods and subtype ensemble results with the same number of clusters can be created. 
