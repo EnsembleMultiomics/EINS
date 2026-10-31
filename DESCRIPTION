@@ -58,9 +58,9 @@ Imports:
     WeightedCluster (>= 1.8.1)
 Depends: 
     R (>= 3.5)
-RoxygenNote: 7.3.2
 Roxygen: list(markdown = TRUE, r6 = TRUE)
 Suggests: 
     knitr,
     rmarkdown
 VignetteBuilder: knitr
+Config/roxygen2/version: 8.1.1
