@@ -113,7 +113,7 @@ EINS_NCI60$run_MCIA(Components = 5, PerformCluster = TRUE, Clusters = 2:8, Seed 
 ```
 
 From the multi-omics integration results, an ensemble can be created for
-both sample subtyping and biomarker discovery.Nine ensemble sample
+both sample subtyping and biomarker discovery. Nine ensemble sample
 clustering methods are available, as well as two ensemble feature
 clustering methods. In this README, we will execute two ensemble
 clustering methods, and 1 ensemble feature clustering methods. For
