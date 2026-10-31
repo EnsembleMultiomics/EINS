@@ -61,7 +61,7 @@ head(EINS_NCI60$Multi_Omics$ClusterRes$MoCluster$Clusters_5)
 head(EINS_NCI60$Multi_Omics$FeatureRes$MoCluster$Factors_5$Proteomics)
 
 ## -----------------------------------------------------------------------------
-EINS_NCI60$run_MCIA(Components = 5, PerformCluster = TRUE, Clusters = 2:8)
+EINS_NCI60$run_MCIA(Components = 5, PerformCluster = TRUE, Clusters = 2:8, Seed = 47)
 
 ## -----------------------------------------------------------------------------
 head(EINS_NCI60$Multi_Omics$ClusterRes$MCIA$Clusters_5)
@@ -88,20 +88,65 @@ head(EINS_NCI60$Ensemble$Samples$CHC$ClusterRes$Clusters_5)
 plot(EINS_NCI60$Ensemble$Samples$CHC$HClustTree$Clusters_5)
 
 ## -----------------------------------------------------------------------------
+EINS_NCI60$run_Ensemble_Sample_CCC(Clusters = 5, IncCluster = 5)
+
+## -----------------------------------------------------------------------------
+head(EINS_NCI60$Ensemble$Samples$CCC$ClusterRes$Clusters_5)
+plot(EINS_NCI60$Ensemble$Samples$CCC$HClustTree$Clusters_5)
+
+## -----------------------------------------------------------------------------
 EINS_NCI60$run_Ensemble_Sample_MDS_HC(Clusters = 5)
 
 ## -----------------------------------------------------------------------------
 head(EINS_NCI60$Ensemble$Samples$MDS_HC$ClusterRes$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$MDS_HC$MDS$Clusters_5$points)
-head(EINS_NCI60$Ensemble$Samples$MDS_HC$DimensionInfo$Clusters_5$StabilityMatrix)
+head(EINS_NCI60$Ensemble$Samples$MDS_HC$Embed$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$MDS_HC$DimensionInfo$Clusters_5$StabilityTable)
 plot(EINS_NCI60$Ensemble$Samples$MDS_HC$HClustTree$Clusters_5)
 
 ## -----------------------------------------------------------------------------
-EINS_NCI60$run_Ensemble_Sample_CCA(Clusters = 5, Reference = "MoCluster", Factors = 5)
+EINS_NCI60$run_Ensemble_Sample_MDS_km(Clusters = 5, Seed = 47)
 
 ## -----------------------------------------------------------------------------
-head(EINS_NCI60$Ensemble$Samples$CCA$Embedding_5$ClusterRes$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$CCA$Embedding_5$EmbeddingMat)
+head(EINS_NCI60$Ensemble$Samples$MDS_km$ClusterRes$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$MDS_km$DistanceMatrix$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$MDS_km$Embed$Clusters_5)
+
+## -----------------------------------------------------------------------------
+EINS_NCI60$run_Ensemble_Sample_MPA(Clusters = 5)
+
+## -----------------------------------------------------------------------------
+head(EINS_NCI60$Ensemble$Samples$MPA$ClusterRes$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$MPA$ConsensusMatrix$Clusters_5)
+EINS_NCI60$Ensemble$Samples$MPA$TotalARI$Clusters_5
+EINS_NCI60$Ensemble$Samples$MPA$Sweeps$Clusters_5
+
+## -----------------------------------------------------------------------------
+EINS_NCI60$run_Ensemble_Sample_CCA(Clusters = 5, Reference = "MoCluster", Factors = 5, Seed = 47)
+
+## -----------------------------------------------------------------------------
+head(EINS_NCI60$Ensemble$Samples$CCA$Embedding_5$Reference_MoCluster$ClusterRes$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$CCA$Embedding_5$Reference_MoCluster$Embed)
+
+## -----------------------------------------------------------------------------
+EINS_NCI60$run_Ensemble_Sample_CAT(Clusters = 5, Factors = 5, Seed = 47)
+
+## -----------------------------------------------------------------------------
+head(EINS_NCI60$Ensemble$Samples$CAT$Embedding_5$ClusterRes$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$CAT$Embedding_5$Embed)
+
+## -----------------------------------------------------------------------------
+EINS_NCI60$run_Ensemble_Sample_CCA_UMAP(Clusters = 5, Reference = "MoCluster", Factors = 5,  Seed = 47)
+
+## -----------------------------------------------------------------------------
+head(EINS_NCI60$Ensemble$Samples$CCA_UMAP$Embedding_5$Reference_MoCluster$ClusterRes$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$CCA_UMAP$Embedding_5$Reference_MoCluster$Embed)
+
+## -----------------------------------------------------------------------------
+EINS_NCI60$run_Ensemble_Sample_CAT_UMAP(Clusters = 5, Factors = 5,  Seed = 47)
+
+## -----------------------------------------------------------------------------
+head(EINS_NCI60$Ensemble$Samples$CAT_UMAP$Embedding_5$ClusterRes$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$CAT_UMAP$Embedding_5$Embed)
 
 ## -----------------------------------------------------------------------------
 EINS_NCI60$run_Ensemble_Integration_Feature(Method = "Average", nFactors = 5)
