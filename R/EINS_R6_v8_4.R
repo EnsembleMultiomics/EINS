@@ -405,7 +405,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
 
       if(MatchedCounts != max(SampleCounts)){
         for(name in OmicsNames){
-          Matcheddf = Data[[name]][,Matched]
+          MatchedDF = Data[[name]][,Matched]
           self$Preprocessed_Omics$Matched_Data[[name]] = MatchedDF[,match(Matched, colnames(MatchedDF))]
         }
         warning(paste0("Different samples provided: ", length(Matched), " shared samples stored in Adapted_Omics_List$Matched_Data"))
@@ -686,9 +686,19 @@ Ensemble_Integration_Suite <- R6::R6Class(
       OmicsName = names(tData)
       for(omics in OmicsName){
         SingleData = tData[[omics]]
-        SingleOmicsDist = stats::dist(SingleData,
-                                      method = Distance,
-                                      p = MinkowskiPower)
+        if(Distance == "minkowski"){
+          if(is.null(MinkowskiPower)){
+            SingleOmicsDist = stats::dist(SingleData,
+                                          method = Distance)
+          }else{
+            SingleOmicsDist = stats::dist(SingleData,
+                                          method = Distance,
+                                          p = MinkowskiPower)
+          }
+        }else{
+          SingleOmicsDist = stats::dist(SingleData,
+                                        method = Distance)
+        }
         SingleOmicsHClust = stats::hclust(SingleOmicsDist,
                                           method = Linkage)
         self$Single_Omics$HClustTree[[omics]] = SingleOmicsHClust
@@ -792,9 +802,19 @@ Ensemble_Integration_Suite <- R6::R6Class(
                           svd.solver = svdSolver,
                           verbose = FALSE)
       scrs = mogsa::moaScore(moa = moas)
-      MCdist = stats::dist(x = scrs,
-                           method = Distance,
-                           p = MinkowskiPower)
+      if(Distance == "minkowski"){
+        if(is.null(MinkowskiPower)){
+          MCdist = stats::dist(scrs,
+                               method = Distance)
+        }else{
+          MCdist = stats::dist(scrs,
+                               method = Distance,
+                               p = MinkowskiPower)
+        }
+      }else{
+        MCdist = stats::dist(scrs,
+                             method = Distance)
+      }
       MCdend = stats::hclust(MCdist,
                              method = Linkage)
 
@@ -836,6 +856,9 @@ Ensemble_Integration_Suite <- R6::R6Class(
         #' (MCIA) from the omicade4 package.
     #' @param PerformCluster Whether to perform k-means clustering on the sample
     #' embeddings. Default is `TRUE`.
+    #' @param Seed Integer seed set immediately before the k-means call, so the
+    #' result is reproducible in isolation rather than depending on the state of
+    #' the global random number stream. Default is `NULL`.
     #' @param Clusters The number of sample clusters to be created. Can be a
     #' single integer to calculate a single cluster assignment, or a range to
     #' calculate multiple cluster assignments.
@@ -843,6 +866,10 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' to be a single integer.
     #' @param SVD Whether singular value decomposition should be used. Default
     #' is `TRUE`.
+    #' @param KmeansNStart Number of random starting configurations for the k-means
+    #' cluster assignment. k-means converges to a local optimum that depends on its
+    #' random starting centres; with a single start the result is not reproducible and
+    #' frequently misses the tightest solution. Default is 25.
     #' @returns A list of results. Fit of the integration, stored by component
     #' number in $Multi_Omics$Fit$MCIA. If PerformCluster = `TRUE`, sample cluster
     #' assignment for each included cluster number, stored in
@@ -854,9 +881,11 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' multivariate approach to the integration of multi-omics datasets.” BMC
     #' Bioinformatics.
     run_MCIA = function(PerformCluster = TRUE, #whether to perform clustering
+                        Seed = NULL, #seed set before the k-means cluster assignment
                         Clusters = NULL, #number of clusters
                         Components = NULL, #number of axes to keep
-                        SVD = TRUE #whether to use svd
+                        SVD = TRUE, #whether to use svd
+                        KmeansNStart = 25 #random starts for the k-means cluster assignment
     ){
 
       #data checks
@@ -905,7 +934,8 @@ Ensemble_Integration_Suite <- R6::R6Class(
       #create clusters and save results
       if(PerformCluster == TRUE){
         for(i in Clusters){
-          kMeansRes = stats::kmeans(as.data.frame(mcoin$mcoa$SynVar), centers = i)[[1]]
+          kMeansRes = if(!is.null(Seed)) set.seed(Seed)
+          kMeansRes = stats::kmeans(as.data.frame(mcoin$mcoa$SynVar), centers = i, nstart = KmeansNStart)[[1]]
           ClusterRes = data.frame(row.names = colnames(Data[[1]]),
                                 Cluster = kMeansRes,
                                 stringsAsFactors = FALSE)
@@ -1086,6 +1116,9 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' @param Clusters The Number of sample clusters to be created. Can be a
     #' single integer to calculate a single cluster assignment, or a range to
     #' calculate multiple cluster assignments.
+    #' @param Seed Integer seed set immediately before the k-means call, so the
+    #' result is reproducible in isolation rather than depending on the state of
+    #' the global random number stream. Default is `NULL`.
     #' @param Linkage Agglomeration method to be used for the hierarchical
     #' clustering. Must be one of: `"ward.D"` (default), `"ward.D2"`, `"single"`,
     #' `"complete"`, `"average"`, `"mcquitty"`, `"median"` or `"centroid"`.
@@ -1105,8 +1138,15 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #'   integrative clustering of multi-omics data using low-rank approximation:
     #'   application to cancer molecular classification. BMC Genomics, 16(1):1022.
     run_LRAcluster = function(Clusters = NULL,
+                              Seed = NULL, #seed set before the low-rank approximation
                               Linkage = "ward.D" #hclust agglomeration method: ward.D,ward.D2, single, complete (default), average, mcquitty, median, centroid
     ){
+      #LRAcluster is NOT deterministic. Its low-rank approximation adapts its step size
+      #with runif() (EINS_Utils_v8.R, inside LRAcluster_MOVICS), so the embedding and
+      #therefore the cluster assignment depend on the state of the random number
+      #stream. Earlier documentation listed this method as deterministic; that was
+      #wrong. Seeding here makes it reproducible in isolation.
+      if(!is.null(Seed)) set.seed(Seed)
 
       #data check
       ##Same number of samples in columns needed for LRAcluster
@@ -1303,12 +1343,19 @@ Ensemble_Integration_Suite <- R6::R6Class(
         #' from the MOFA2 package.
     #' @param PerformCluster Whether to perform k-means clustering on the sample
     #' embeddings. Default is `TRUE`.
+    #' @param Seed Integer seed set immediately before the k-means call, so the
+    #' result is reproducible in isolation rather than depending on the state of
+    #' the global random number stream. Default is `NULL`.
     #' @param Clusters The number of sample clusters to be created. Can be a
     #' single integer to calculate a single cluster assignment, or a range to
     #' calculate multiple cluster assignments.
     #' @param Factors Number of factors (components).
     #' @param ScaleViews Whether to scale the different omics datasets to be
     #' scaled to have the same unit variance. Default is `FALSE`.
+    #' @param KmeansNStart Number of random starting configurations for the k-means
+    #' cluster assignment. k-means converges to a local optimum that depends on its
+    #' random starting centres; with a single start the result is not reproducible and
+    #' frequently misses the tightest solution. Default is 25.
     #' @param SpikeSlabFactors Whether to use spike and slab sparsity on the
     #' factors (components). Default is `FALSE`.
     #' @param SpikeSlabWeights Whether to use spike and slab sparsity on the
@@ -1343,9 +1390,11 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' framework for unsupervised integration of multi‐omics data sets.”
     #' Molecular Systems Biology, 14.
     run_MOFA = function(PerformCluster = TRUE, #whether to perform clustering
+                        Seed = NULL, #seed set before the factorisation and clustering
                         Clusters = NULL, #number of clusters
                         Factors = NULL,
                         ScaleViews = FALSE, #scale each view to unit variance
+                        KmeansNStart = 25, #random starts for the k-means cluster assignment
                         SpikeSlabFactors = FALSE, #spike-slab sparsity prior in factors
                         SpikeSlabWeights = TRUE, #spike-slab sparsity prior in weights
                         ARDFactors = FALSE, #ARD prior in factors
@@ -1429,7 +1478,8 @@ Ensemble_Integration_Suite <- R6::R6Class(
       #create clusters and save results
       if(PerformCluster == TRUE){
         for(i in Clusters){
-          kMeansRes = stats::kmeans(as.data.frame(MOFAmodel@expectations$Z$group1), centers = i)[[1]]
+          kMeansRes = if(!is.null(Seed)) set.seed(Seed)
+          kMeansRes = stats::kmeans(as.data.frame(MOFAmodel@expectations$Z$group1), centers = i, nstart = KmeansNStart)[[1]]
           ClusterRes = data.frame(row.names = colnames(Data[[1]]),
                                   Cluster = kMeansRes,
                                   stringsAsFactors = FALSE)
@@ -1521,6 +1571,14 @@ Ensemble_Integration_Suite <- R6::R6Class(
         #' reduction as described in the GAUDI method. In addition to clustering
         #' with HDBSCAN, as done in GAUDI, we provide DBSCAN and k-means
         #' methods for sample clustering.
+    #' @param Seed Integer seed set immediately before the UMAP calculation, so
+    #' the embedding is reproducible in isolation. UMAP refines its embedding by
+    #' stochastic gradient descent and draws from the global random number
+    #' stream, so without a seed the result depends on what was run before it in
+    #' the same session. The seed also forms part of the stored fit parameters,
+    #' so changing it forces a recalculation rather than silently reusing a
+    #' cached embedding. Default is `NULL`, which leaves the stream untouched and
+    #' reproduces the behaviour of earlier versions.
     #' @param SingleOmicsUMAPNeighbors Size of the local neighborhood used for
     #' manifold approximation for each individual omics dataset. If a single
     #' integer, all omics datasets get the same size. If a vector with the same
@@ -1587,6 +1645,10 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' single integer to calculate a single cluster assignment, or a range to
     #' calculate multiple cluster assignments. Only included if `ClusterMethod`
     #' = `"Kmeans"`.
+    #' @param KmeansNStart Number of random starting configurations for the k-means
+    #' cluster assignment. k-means converges to a local optimum that depends on its
+    #' random starting centres; with a single start the result is not reproducible and
+    #' frequently misses the tightest solution. Default is 25.
     #' @returns A list of results. Fit of the single omics UMAPs, concatenated
     #' UMAP and clustering method for each cluster number, stored by clustering
     #' method in $Multi_Omics$Fit$GAUDI. Sample cluster assignments for each
@@ -1600,7 +1662,8 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #'   * Hahsler M, Piekenbrock M (2025). dbscan: Density-Based Spatial
     #'    Clustering of Applications with Noise (DBSCAN) and Related Algorithms.
     #'    doi:10.32614/CRAN.package.dbscan, R package version 1.2.3
-    run_GAUDI = function(SingleOmicsUMAPNeighbors = 15,
+    run_GAUDI = function(Seed = NULL,
+                         SingleOmicsUMAPNeighbors = 15,
                          SingleOmicsUMAPDimensions = 4,
                          SingleOmicsUMAPDistance = "euclidean",
                          SingleOmicsUMAPScale = FALSE,
@@ -1616,10 +1679,11 @@ Ensemble_Integration_Suite <- R6::R6Class(
                          HDBSCANminPts = 2, #minimum cluster size for HDBSCAN
                          DBSCANeps = NULL, #radius of epsilon neighborhood
                          DBSCANminPts = 2, #minimum cluster size for DBSCAN
-                         KmeansClusters = NULL #number of clusters for K-means
+                         KmeansClusters = NULL, #number of clusters for K-means
+                         KmeansNStart = 25 #random starts for the k-means cluster assignment
     ){
       #store parameters
-      CurrentParam = c(SingleOmicsUMAPNeighbors = SingleOmicsUMAPNeighbors, SingleOmicsUMAPDimensions = SingleOmicsUMAPDimensions, SingleOmicsUMAPDistance = SingleOmicsUMAPDistance, SingleOmicsUMAPScale = SingleOmicsUMAPScale, SingleOmicsUMAPInit = SingleOmicsUMAPInit, SingleOmicsUMAPPCA = SingleOmicsUMAPPCA, ConcatUMAPNeighbors = ConcatUMAPNeighbors, ConcatUMAPDimensions = ConcatUMAPDimensions, ConcatUMAPDistance = ConcatUMAPDistance, ConcatUMAPScale = ConcatUMAPScale, ConcatUMAPInit = ConcatUMAPInit, ConcatUMAPPCA = ConcatUMAPPCA)
+      CurrentParam = c(Seed = Seed, SingleOmicsUMAPNeighbors = SingleOmicsUMAPNeighbors, SingleOmicsUMAPDimensions = SingleOmicsUMAPDimensions, SingleOmicsUMAPDistance = SingleOmicsUMAPDistance, SingleOmicsUMAPScale = SingleOmicsUMAPScale, SingleOmicsUMAPInit = SingleOmicsUMAPInit, SingleOmicsUMAPPCA = SingleOmicsUMAPPCA, ConcatUMAPNeighbors = ConcatUMAPNeighbors, ConcatUMAPDimensions = ConcatUMAPDimensions, ConcatUMAPDistance = ConcatUMAPDistance, ConcatUMAPScale = ConcatUMAPScale, ConcatUMAPInit = ConcatUMAPInit, ConcatUMAPPCA = ConcatUMAPPCA)
 
       #Data selection
       if(!is.null(self$Preprocessed_Omics$Matched_Data)){
@@ -1634,6 +1698,12 @@ Ensemble_Integration_Suite <- R6::R6Class(
 
       #UMAP requires samples in rows, so transpose data
       tData = lapply(Data, t)
+
+      #uwot::umap refines its embedding by stochastic gradient descent, so without a
+      #seed the result depends on whatever has already drawn from the global random
+      #number stream in this session - including the k-means restarts of any method
+      #run earlier. Seeding here makes the embedding reproducible on its own.
+      if(!is.null(Seed)) set.seed(Seed)
 
       #UMAP
       if(!is.null(self$Multi_Omics$Fit$GAUDI)){
@@ -1816,7 +1886,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
 
       }else if(ClusterMethod == "Kmeans"){
         for(i in KmeansClusters){
-          UMAP_clustres = stats::kmeans(Concat_UMAP, centers = i)[[1]]
+          UMAP_clustres = stats::kmeans(Concat_UMAP, centers = i, nstart = KmeansNStart)[[1]]
 
           #save results
           ClusterRes = data.frame(row.names = rownames(tData[[1]]),
@@ -1894,14 +1964,15 @@ Ensemble_Integration_Suite <- R6::R6Class(
 
     #Ensemble sample clustering by Consensus Hierarchical Clustering (CHC)
     #' @description
-    #' Create an ensemble clustering result by combining the clustering
-    #' results from MoCluster, MCIA, jNMF, iNMF, LRAcluster, COCA, MOFA,
-    #' SNF and GAUDI. Borrows the idea of consensus cluster, by creating a
-    #' sample similarity matrix counting the number of times samples cluster
-    #' together. Hierarchical clustering is then performed on this matrix.
-    #' Provides a more robust clustering result when performed with
-    #' multiple cluster assignment, which can be achieved by running the
-    #' multi-omics integration methods with a range of `Clusters`.
+        #' Create an ensemble clustering result by combining the clustering
+        #' results from MoCluster, MCIA, jNMF, iNMF, LRAcluster, COCA, MOFA,
+        #' SNF and GAUDI. Borrows the idea of consensus cluster, by creating a
+        #' sample similarity matrix counting the number of times samples cluster
+        #' together. Code for the similarity matrix is adapted from MOVICS.
+        #' Hierarchical clustering is then performed on this matrix.
+        #' Provides a more robust clustering result when performed with
+        #' multiple cluster assignment, which can be achieved by running the
+        #' multi-omics integration methods with a range of `Clusters`.
     #' @param Clusters Number of clusters to create from the hierarchical
     #' clustering result.
     #' @param SNFDistance Which distance used to calculate SNF results to be
@@ -1925,6 +1996,9 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' Ensemble sample cluster assignment is stored in
     #' $Ensemble$Samples$CHC$ClusterRes by cluster number. Sample dendrogram is
     #' stored in $Plots$Dendrogram$Ensemble$CHC by cluster number.
+    #' @references Lu X, Meng J, Zhou Y, Jiang L, Yan F. MOVICS: an R package for
+    #' multi-omics integration and visualization in cancer subtyping. Bioinformatics.
+    #' 2021 Apr 1;36(22-23):5539-5541.
     run_Ensemble_Sample_CHC = function(Clusters = NULL,
                                        SNFDistance = "euclidean squared",
                                        Distance = "euclidean",
@@ -1966,13 +2040,95 @@ Ensemble_Integration_Suite <- R6::R6Class(
       self$Plots$Dendrogram$Ensemble$CHC[[EnsembleClustnum]] = EnsembleDendro
     },
 
-    #Ensemble sample clustering by Multidimensional Scaling (MDS)
+    #Ensemble sample clustering by Consensus Co-Clustering (CCC)
     #' @description
         #' Create an ensemble clustering result by combining the clustering
         #' results from MoCluster, MCIA, jNMF, iNMF, LRAcluster, COCA, MOFA,
         #' SNF and GAUDI. Borrows the idea of consensus cluster, by creating a
         #' sample similarity matrix counting the number of times samples cluster
-        #' together. Multidimensional Scaling is then performed on this matrix.
+        #' together. Code for the similarity matrix is adapted from MOVICS.
+        #' Hierarchical clustering is then performed on this matrix.
+        #' Provides a more robust clustering result when performed with
+        #' multiple cluster assignment, which can be achieved by running the
+        #' multi-omics integration methods with a range of `Clusters`.
+        #' @param Clusters Number of clusters to create from the hierarchical
+        #' clustering result.
+    #' @param IncCluster Cluster number for which multi-omics clustering results
+    #' should be included.
+    #' @param SNFDistance Which distance used to calculate SNF results to be
+    #' included in the ensemble clustering. This is needed to reduce the impact
+    #' of SNF on the ensemble clustering assignment. Must be one of:
+    #' `"euclidean squared"` (default), `"euclidean"`, `"manhattan"`,
+    #' `"minkowksi 0.25"`, `"minkowski 0.5"`, `"minkowski 3"` or `"minkowski 4"`.
+    #' @param Distance Distance Distance metric to be used for the calculation of the
+    #' feature distance matrices. Must be one of: `"euclidean"` (default),
+    #' `"maximum"`, `"manhattan"`, `"canberra"`, `"binary"` or `"minkowski"`.
+    #' If `"minkowski"` is selected, argument `"MinkowskiPower"` needs to be
+    #' included.
+    #' @param MinkowskiPower Power of the Minkowski distance. Default is NULL.
+    #' @param Linkage Agglomeration method to be used for the hierarchical
+    #' clustering. Must be one of: `"ward.D"`, `"ward.D2"`, `"single"`,
+    #' `"complete"` (default), `"average"`, `"mcquitty"`, `"median"` or
+    #' `"centroid"`.
+    #' @returns A list of results. Sample distance matrix is stored in
+    #' $Ensemble$Samples$CCC$DistanceMatrix by cluster number. Sample hierarchical
+    #' clustering tree is stored in $Ensemble$Samples$CCC$HClust by cluster number.
+    #' Ensemble sample cluster assignment is stored in
+    #' $Ensemble$Samples$CCC$ClusterRes by cluster number. Sample dendrogram is
+    #' stored in $Plots$Dendrogram$Ensemble$CCC by cluster number.
+    #' @references Lu X, Meng J, Zhou Y, Jiang L, Yan F. MOVICS: an R package for
+    #' multi-omics integration and visualization in cancer subtyping. Bioinformatics.
+    #' 2021 Apr 1;36(22-23):5539-5541.
+    run_Ensemble_Sample_CCC = function(Clusters = NULL,
+                                      IncCluster = NULL,
+                                      SNFDistance = "euclidean squared",
+                                      Distance = "euclidean",
+                                      MinkowskiPower = NULL,
+                                      Linkage = "ward.D2"){
+      Ens_Clust_Methods = names(self$Multi_Omics$ClusterRes)
+      ClusterResults = list()
+
+      for(method in Ens_Clust_Methods){
+        if(method == "SNF"){
+          Ens_Clust_SNF_Distance = names(self$Multi_Omics$ClusterRes$SNF)
+          for(distance in Ens_Clust_SNF_Distance){
+            if(distance == SNFDistance){
+              ClusterResults$SNF[[distance]] = self$Multi_Omics$ClusterRes$SNF[[distance]]
+            }
+          }
+        }else{
+          ClusterResults[[method]] = self$Multi_Omics$ClusterRes[[method]]
+        }
+      }
+
+      Ensemble_Data = Ensemble_Cluster_Data_CCC(Data = ClusterResults, ResClust = IncCluster)
+      Ensemble_Sample_IDs = rownames(Ensemble_Data[[1]])
+
+      Ensemble_Clustering = Ensemble_Cluster_CHC(MethodClusterResults = Ensemble_Data,
+                                                 Sample_IDs = Ensemble_Sample_IDs,
+                                                 Distance = Distance,
+                                                 MinkowskiPower = MinkowskiPower,
+                                                 Linkage = Linkage,
+                                                 Clusters = Clusters)
+      ClusterRes = data.frame(row.names = Ensemble_Sample_IDs,
+                              Cluster = Ensemble_Clustering$ClusterRes,
+                              stringsAsFactors = FALSE)
+      EnsembleDendro = stats::as.dendrogram(Ensemble_Clustering$HClustRes)
+      EnsembleClustnum = paste0("Clusters_", Clusters)
+      self$Ensemble$Samples$CCC$ClusterRes[[EnsembleClustnum]] = ClusterRes
+      self$Ensemble$Samples$CCC$DistanceMatrix[[EnsembleClustnum]] = Ensemble_Clustering$DistMat
+      self$Ensemble$Samples$CCC$HClustTree[[EnsembleClustnum]] = Ensemble_Clustering$HClustRes
+      self$Plots$Dendrogram$Ensemble$CCC[[EnsembleClustnum]] = EnsembleDendro
+    },
+
+    #Ensemble sample clustering by Multidimensional Scaling (MDS), clustered with hierarchical clustering
+    #' @description
+        #' Create an ensemble clustering result by combining the clustering
+        #' results from MoCluster, MCIA, jNMF, iNMF, LRAcluster, COCA, MOFA,
+        #' SNF and GAUDI. Borrows the idea of consensus cluster, by creating a
+        #' sample similarity matrix counting the number of times samples cluster
+        #' together. Code for similarity matrix is adapted from the MOVICS package.
+        #' Multidimensional Scaling is then performed on this matrix.
         #' Using the MDS embedding, k-means clustering can be performed to get
         #' cluster assignments. Provides a more robust clustering result when
         #' performed with multiple cluster assignment, which can be achieved by
@@ -1990,13 +2146,16 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' If `"minkowski"` is selected, argument `"MinkowskiPower"` needs to be
     #' included.
     #' @param MinkowskiPower Power of the Minkowski distance. Default is NULL.
-    #' @param CandidateDimensions Number of MDS dimensions to be tested. Default is
+    #' @param CandidateDimensions Number of MDS dimensions to be tested in
+    #' stability selection. A range of MDS dimenions can be provided. Default is
     #' 2:10 dimensions.
     #' @param StabilityEpsilon How much the selected leave-one-method-out run may
-    #' diverge from the maximum observed stability, default is 0.02.
+    #' diverge from the maximum observed stability in stability selection,
+    #' default is 0.02.
     #' @param AddConstant Logical, indicating if an additive constant c* should
     #' be computed, and added to the non-diagonal dissimilarities such that the
-    #' modified dissimilarities are Euclidean.
+    #' modified dissimilarities are Euclidean. Passed to `stats::cmdscale(add = )`.
+    #' Default TRUE.
     #' @param Linkage Agglomeration method to be used for the hierarchical
     #' clustering. Must be one of: `"ward.D"`, `"ward.D2"` (default), `"single"`,
     #' `"complete"`, `"average"`, `"mcquitty"`, `"median"` or `"centroid"`.
@@ -2014,6 +2173,9 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' clustering tree is stored in $Ensemble$Samples$MDS_HC$HClustTree by
     #' cluster number. Sample dendrogram is stored in
     #' $Plots$Dendrogram$Ensemble$MDS_HC by cluster number.
+    #' @references Lu X, Meng J, Zhou Y, Jiang L, Yan F. MOVICS: an R package for
+    #' multi-omics integration and visualization in cancer subtyping. Bioinformatics.
+    #' 2021 Apr 1;36(22-23):5539-5541.
     run_Ensemble_Sample_MDS_HC = function(Clusters = NULL,
                                           SNFDistance = "euclidean squared",
                                           Distance = "euclidean",
@@ -2117,18 +2279,169 @@ Ensemble_Integration_Suite <- R6::R6Class(
         self$Plots$Dendrogram$Ensemble$MDS_HC[[EnsembleClustnum]] = EnsembleDendro
       },
 
+    #Ensemble sample clustering by Multidimensional Scaling + k-means
+    #' @description
+    #' Create an ensemble clustering result by combining the clustering
+    #' results from MoCluster, MCIA, jNMF, iNMF, LRAcluster, COCA, MOFA,
+    #' SNF and GAUDI. Borrows the idea of consensus cluster, by creating a
+    #' sample similarity matrix counting the number of times samples cluster
+    #' together. Code for similarity matrix is adapted from the MOVICS package.
+    #' Multidimensional Scaling is then performed on this matrix.
+    #' Using the MDS embedding, k-means clustering can be performed to get
+    #' cluster assignments. Provides a more robust clustering result when
+    #' performed with multiple cluster assignment, which can be achieved by
+    #' running the multi-omics integration methods with a range of `Clusters`.
+    #' Separate from `run_Ensemble_Sample_MDS_HC()`, which was added in v8.
+    #' This original version is kept so the two can be compared on identical
+    #' data.
+    #' @param Clusters Number of clusters. Also used as the MDS embedding dimension.
+    #' @param Seed Integer seed set immediately before the k-means call, so the
+    #' result is reproducible in isolation rather than depending on the state of
+    #' the global random number stream. Default is `NULL`.
+    #' @param SNFDistance Which SNF distance variant to include. Default
+    #' `"euclidean squared"`.
+    #' @param Distance Distance metric to be used for the calculation of the
+    #' feature distance matrices. Must be one of: `"euclidean"` (default),
+    #' `"maximum"`, `"manhattan"`, `"canberra"`, `"binary"` or `"minkowski"`.
+    #' If `"minkowski"` is selected, argument `"MinkowskiPower"` needs to be
+    #' included.
+    #' @param MinkowskiPower Power of the Minkowski distance. Default NULL.
+    #' @param AddConstant Logical, indicating if an additive constant c* should
+    #' be computed, and added to the non-diagonal dissimilarities such that the
+    #' modified dissimilarities are Euclidean. Passed to `stats::cmdscale(add = )`.
+    #' Default TRUE.
+    #' @param KmeansNStart Number of random starting configurations for the
+    #' k-means cluster assignment. k-means converges to a local optimum that
+    #' depends on its random starting centres; with a single start the result is
+    #' not reproducible and frequently misses the tightest solution. Default is 25.
+    #' @returns Cluster assignment in $Ensemble$Samples$MDS_km$ClusterRes by
+    #' cluster number, dissimilarity in $MDS_km$DistanceMatrix, MDS coordinates
+    #' in $MDS_km$Embed.
+    run_Ensemble_Sample_MDS_km = function(Clusters = NULL,
+                                          Seed = NULL,
+                                          SNFDistance = "euclidean squared",
+                                          Distance = "euclidean",
+                                          MinkowskiPower = NULL,
+                                          AddConstant = TRUE,
+                                          KmeansNStart = 25){
+      Ens_Clust_Methods = names(self$Multi_Omics$ClusterRes)
+      ClusterResults = list()
+
+      for(method in Ens_Clust_Methods){
+        if(method == "SNF"){
+          Ens_Clust_SNF_Distance = names(self$Multi_Omics$ClusterRes$SNF)
+          for(distance in Ens_Clust_SNF_Distance){
+            if(distance == SNFDistance){
+              ClusterResults$SNF[[distance]] = self$Multi_Omics$ClusterRes$SNF[[distance]]
+            }
+          }
+        }else{
+          ClusterResults[[method]] = self$Multi_Omics$ClusterRes[[method]]
+        }
+      }
+
+      Ensemble_Data = Ensemble_Cluster_Data(Data = ClusterResults)
+      Ensemble_Sample_IDs = rownames(Ensemble_Data[[1]])
+
+      Ensemble_Clustering = Ensemble_Cluster_MDS(MethodClusterResults = Ensemble_Data,
+                                                 Sample_IDs = Ensemble_Sample_IDs,
+                                                 Distance = Distance,
+                                                 MinkowskiPower = MinkowskiPower,
+                                                 AddConstant = AddConstant,
+                                                 Clusters = Clusters,
+                                                 KmeansNStart = KmeansNStart,
+                                                 Seed = Seed)
+
+      ClusterRes = data.frame(row.names = Ensemble_Sample_IDs,
+                              Cluster = Ensemble_Clustering$ClusterRes,
+                              stringsAsFactors = FALSE)
+      EnsembleClustnum = paste0("Clusters_", Clusters)
+      self$Ensemble$Samples$MDS_km$ClusterRes[[EnsembleClustnum]] = ClusterRes
+      self$Ensemble$Samples$MDS_km$DistanceMatrix[[EnsembleClustnum]] = Ensemble_Clustering$DistMat
+      self$Ensemble$Samples$MDS_km$Embed[[EnsembleClustnum]] = Ensemble_Clustering$Embed
+    },
+
+    #Ensemble sample clustering by Median PArtition search (MPA)
+    #' @description
+    #' Create an ensemble clustering result by searching directly for the
+    #' partition that agrees most with every clustering result of the
+    #' multi-omics integration methods, measured as the total Adjusted Rand
+    #' Index. Where `run_Ensemble_Sample_CHC()` first summarises the
+    #' contributing clusterings into a co-association matrix and then clusters
+    #' that summary, this method optimises the agreement criterion itself and
+    #' so does not discard the information that summarising loses. The search
+    #' is a greedy local search started from the `run_Ensemble_Sample_CHC()`
+    #' partition, and is fully deterministic, so it takes no seed.
+    #' @param Clusters Number of clusters to create.
+    #' @param SNFDistance Which distance used to calculate SNF results to be
+    #' included in the ensemble clustering. Must be one of:
+    #' `"euclidean squared"` (default), `"euclidean"`, `"manhattan"`,
+    #' `"minkowksi 0.25"`, `"minkowski 0.5"`, `"minkowski 3"` or `"minkowski 4"`.
+    #' @param GAUDIMethod Which GAUDI clustering method to take results from.
+    #' Default is `"Kmeans"`.
+    #' @param Distance Distance metric used for the starting partition. Must be
+    #' one of: `"euclidean"` (default), `"maximum"`, `"manhattan"`, `"canberra"`,
+    #' `"binary"` or `"minkowski"`.
+    #' @param MinkowskiPower Power of the Minkowski distance. Default is `NULL`.
+    #' @param Linkage Agglomeration method used for the starting partition. Must
+    #' be one of: `"ward.D"`, `"ward.D2"` (default), `"single"`, `"complete"`,
+    #' `"average"`, `"mcquitty"`, `"median"` or `"centroid"`.
+    #' @param MaxSweeps Maximum number of passes over all samples. Default is 2.
+    #' @returns A list of results. Ensemble sample cluster assignment is stored in
+    #' $Ensemble$Samples$MPA$ClusterRes by cluster number. The co-association
+    #' matrix is stored in $Ensemble$Samples$MPA$ConsensusMatrix and the achieved
+    #' total Adjusted Rand Index in $Ensemble$Samples$MPA$TotalARI, by cluster
+    #' number. Total number of sweeps performed is stored in
+    #' $Ensemble$Samples$MPA$Sweeps, by cluster number.
+    #' @references Vega-Pons S, Ruiz-Shulcloper J. A survey of clustering
+    #' ensemble algorithms. International Journal of Pattern Recognition and
+    #' Artificial Intelligence. 2011;25(3):337-372.
+    run_Ensemble_Sample_MPA = function(Clusters = NULL,
+                                       SNFDistance = "euclidean squared",
+                                       GAUDIMethod = "Kmeans",
+                                       Distance = "euclidean",
+                                       MinkowskiPower = NULL,
+                                       Linkage = "ward.D2",
+                                       MaxSweeps = 2){
+      ClusterResults = Ensemble_Base_Clusterings(ClusterRes = self$Multi_Omics$ClusterRes,
+                                                 SNFDistance = SNFDistance,
+                                                 GAUDIMethod = GAUDIMethod)
+      Ensemble_Data = Ensemble_Cluster_Data(Data = ClusterResults)
+      Ensemble_Sample_IDs = rownames(Ensemble_Data[[1]])
+
+      Ensemble_Clustering = Ensemble_Cluster_MPA(MethodClusterResults = Ensemble_Data,
+                                                 Sample_IDs = Ensemble_Sample_IDs,
+                                                 Clusters = Clusters,
+                                                 Distance = Distance,
+                                                 MinkowskiPower = MinkowskiPower,
+                                                 Linkage = Linkage,
+                                                 MaxSweeps = MaxSweeps)
+      ClusterRes = data.frame(row.names = Ensemble_Sample_IDs,
+                              Cluster = Ensemble_Clustering$ClusterRes,
+                              stringsAsFactors = FALSE)
+      EnsembleClustnum = paste0("Clusters_", Clusters)
+      self$Ensemble$Samples$MPA$ClusterRes[[EnsembleClustnum]] = ClusterRes
+      self$Ensemble$Samples$MPA$ConsensusMatrix[[EnsembleClustnum]] = Ensemble_Clustering$ConsensusMatrix
+      self$Ensemble$Samples$MPA$TotalARI[[EnsembleClustnum]] = Ensemble_Clustering$TotalARI
+      self$Ensemble$Samples$MPA$Sweeps[[EnsembleClustnum]] = Ensemble_Clustering$Sweeps
+    },
+
     #Ensemble sample clustering by Canonical Correlation Analysis (CCA)
     #' @description
-    #' Create an ensemble clustering result by aligning the embeddings results
-    #' from MoCluster, MCIA, jNMF, iNMF, LRAcluster, COCA, MOFA, SNF and GAUDI.
-    #' Uses CCA to align the embeddings from the multi-omics integration methods
-    #' into a common latend space. For COCA and SNF, low-dimensional embeddings
-    #' of samples are not provided, and one-hot encoding is used in place of
-    #' embedding. One method is selected as reference embedding, with all other
-    #' embeddings sequentially aligned to this reference using pairwise CCA. The
-    #' aligned embedding is then used for k-means clustering.
+        #' Create an ensemble clustering result by aligning the embeddings
+        #' results from MoCluster, MCIA, jNMF, iNMF, LRAcluster, COCA, MOFA, SNF
+        #' and GAUDI. Uses CCA to align the embeddings from the multi-omics
+        #' integration methods into a common latend space. For COCA and SNF,
+        #' low-dimensional embeddings of samples are not provided, and one-hot
+        #' encoding is used in place of embedding. One method is selected as
+        #' reference embedding, with all other embeddings sequentially aligned to
+        #' this reference using pairwise CCA. The aligned embedding is then used
+        #' for k-means clustering.
     #' @param Clusters Number of clusters to create from the CCA aligned
     #' embedding.
+    #' @param Seed Integer seed set immediately before the k-means call, so the
+    #' result is reproducible in isolation rather than depending on the state of
+    #' the global random number stream. Default is `NULL`.
     #' @param SNFDistance Which distance used to calculate SNF results to be
     #' included in the ensemble clustering. This is needed to reduce the impact
     #' of SNF on the ensemble clustering assignment. Must be one of:
@@ -2142,15 +2455,21 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' results to be included in the ensemble clustering. This is needed to
     #' reduce the impact of GAUDI on the ensemble clustering assignment. Must be
     #' one of: `"Kmeans"` (default), `"HDBSCAN"` or `"DBSCAN"`.
+    #' @param KmeansNStart Number of random starting configurations for the
+    #' k-means cluster assignment. k-means converges to a local optimum that
+    #' depends on its random starting centres; with a single start the result is
+    #' not reproducible and frequently misses the tightest solution. Default is 25.
     #' @returns A list of results. CCA aligned embedding is stored in
-    #' $Ensemble$Samples$CCA$Embedding by factor number. Ensemble sample cluster
+    #' $Ensemble$Samples$CCA$Embed by factor number. Ensemble sample cluster
     #' assignment is stored in $Ensemble$Samples$CCA$ClusterRes by factor and
     #' cluster number.
     run_Ensemble_Sample_CCA = function(Clusters = NULL,
+                                       Seed = NULL,
                                        SNFDistance = "euclidean squared",
                                        Reference = "MoCluster",
                                        Factors = NULL,
-                                       GAUDIMethod = "Kmeans"){
+                                       GAUDIMethod = "Kmeans",
+                                       KmeansNStart = 25){
       #Data selection
       if(!is.null(self$Preprocessed_Omics$Matched_Data)){
         Data = self$Preprocessed_Omics$Matched_Data
@@ -2164,128 +2483,277 @@ Ensemble_Integration_Suite <- R6::R6Class(
 
       Samples = colnames(Data[[1]])
 
-      #extract embeddings
-      FactorNum = paste0("Factors_", Factors)
-      EmbedList = list()
-      #with CoordData
-      Coord_Methods = names(self$Multi_Omics$CoordData)
-      for(method in Coord_Methods){
-        if(method == "GAUDI"){
-          Embed = self$Multi_Omics$CoordData[[method]][[GAUDIMethod]][[FactorNum]]
-        }else{
-          Embed = self$Multi_Omics$CoordData[[method]][[FactorNum]]
-        }
-        if(!is.null(Embed)){
-          Embed = Embed[match(Samples, rownames(Embed)), , drop = FALSE]
-          colnames(Embed) <- paste0(method, "_Factor_", 1:ncol(Embed))
-          EmbedList[[method]] = as.matrix(Embed)
-        }else{
-          warning(paste0("No embedding from ", method, " with ", Factors, " factors available, rerun ", method, " to include this method in CCA"))
-        }
-      }
-
-      #with jNMF/iNMF
-      ClustNum = paste0("Clusters_", Factors)
-      NMFMethod = c("jNMF", "iNMF")
-      for(method in NMFMethod){
-        FitW = self$Multi_Omics$Fit[[method]][[ClustNum]]$W
-        if(!is.null(dim(FitW))){
-          FitW = FitW[match(Samples, rownames(FitW)), , drop = FALSE]
-          colnames(FitW) = paste0(method, "_Factor_", 1:ncol(FitW))
-          EmbedList[[method]] = as.matrix(FitW)
-        }else{
-          warning(paste0("No embedding from ", method, " with ", Factors, " factors available, rerun ", method, " to include this method in CCA"))
-        }
-      }
-
-      #no coord data
-      OneHotMethod = c("COCA", "SNF")
-      for(method in OneHotMethod) {
-        if(method == "SNF"){
-          ClustRes = self$Multi_Omics$ClusterRes[[method]][[SNFDistance]][[ClustNum]]
-        }else{
-          ClustRes = self$Multi_Omics$ClusterRes[[method]][[ClustNum]]
-        }
-        if (!is.null(ClustRes)) {
-          # Match sample order
-          ClustRes = ClustRes[match(Samples, rownames(ClustRes)), , drop = FALSE]
-          ClusterLabel = as.numeric(ClustRes$Cluster)
-
-          # One-hot encode
-          n_samples = length(ClusterLabel)
-          n_clusters = Factors
-          OneHot = matrix(0, nrow = n_samples, ncol = n_clusters)
-
-          for (i in 1:n_samples) {
-            if (!is.na(ClusterLabel[i]) && ClusterLabel[i] <= n_clusters) {
-              OneHot[i, ClusterLabel[i]] = 1
-            }
-          }
-
-          rownames(OneHot) = Samples
-          colnames(OneHot) = paste0(method, "_Cluster_", 1:n_clusters)
-          EmbedList[[method]] = as.matrix(OneHot)
-        }else{
-          warning(paste0("No embedding from ", method, " with ", Factors, " factors available, rerun ", method, " to include this method in CCA"))
-        }
-      }
+      EmbedList = Ensemble_Embedding_List(Samples = Samples,
+                                          CoordData = self$Multi_Omics$CoordData,
+                                          Fit = self$Multi_Omics$Fit,
+                                          ClusterRes = self$Multi_Omics$ClusterRes,
+                                          Factors = Factors,
+                                          SNFDistance = SNFDistance,
+                                          GAUDIMethod = GAUDIMethod)
 
       if(length(EmbedList) < 2) {
-        stop(paste0("Fewer than 2 embeddings with ", Factors, " factors available, run additional methods to perform ensemble CCA"))
+        stop(paste0("Fewer than 2 embeddings with ", Factors, " factors available,
+                    run additional multi-omics integration methods to perform ensemble CCA"))
       }
 
-      if(Reference %in% names(EmbedList)){
-        ref_id = which(names(EmbedList) == Reference)
-        EmbedList = c(EmbedList[ref_id], EmbedList[-ref_id])
-      }else{
-        stop(paste0("No ", Reference, " embeddings available with ", Factors, "factors, run ", Reference, " or change Reference variable"))
-      }
+      Aligned_Embed = Ensemble_Align_CCA(EmbedList = EmbedList,
+                                         Reference = Reference,
+                                         Samples = Samples)
 
-      Ref = as.matrix(EmbedList[[1]])
-      n_samples = nrow(Ref)
-
-      Aligned = list()
-      Aligned[[1]] = Ref
-
-      for(i in 2:length(EmbedList)){
-        CurrentEmbed = as.matrix(EmbedList[[i]])
-        if(nrow(CurrentEmbed) != n_samples){
-          Aligned[[i]] = CurrentEmbed
-          next
-        }
-
-        tryCatch({
-          n_CCA = min(ncol(Ref), ncol(CurrentEmbed), n_samples - 1)
-
-          CCARes = stats::cancor(x = as.matrix(Ref[, 1:n_CCA, drop = FALSE]),
-                                 y = as.matrix(CurrentEmbed[, 1:n_CCA, drop = FALSE]))
-
-          if(!is.null(CCARes$ycoef) && is.matrix(CCARes$ycoef)){
-            n_Canon = min(ncol(CCARes$ycoef), n_CCA)
-            AlignedCurr = as.matrix(CurrentEmbed[, 1:n_CCA, drop = FALSE]) %*%
-              as.matrix(CCARes$ycoef[, 1:n_Canon, drop = FALSE])
-            Aligned[[i]] = AlignedCurr
-          }else{
-            Aligned[[i]] = CurrentEmbed
-          }
-        }, error = function(e) {
-          Aligned[[i]] <<- CurrentEmbed
-        })
-      }
-
-      Aligned_Embed = do.call(cbind, Aligned)
-      rownames(Aligned_Embed) = Samples
-      colnames(Aligned_Embed) = paste0("CCA_", 1:ncol(Aligned_Embed))
-
-      Aligned_Clust = stats::kmeans(Aligned_Embed, centers = Clusters)[[1]]
+      if(!is.null(Seed)) set.seed(Seed)
+      Aligned_Clust = stats::kmeans(Aligned_Embed, centers = Clusters, nstart = KmeansNStart)[[1]]
       AlClusterRes = data.frame(row.names = Samples,
                                 Cluster = Aligned_Clust,
                                 stringsAsFactors = FALSE)
 
       EnsembleClustnum = paste0("Clusters_", Clusters)
       EnsembleFactnum = paste0("Embedding_", Factors)
-      self$Ensemble$Samples$CCA[[EnsembleFactnum]]$ClusterRes[[EnsembleClustnum]] = AlClusterRes
-      self$Ensemble$Samples$CCA[[EnsembleFactnum]]$EmbeddingMat = Aligned_Embed
+      EnsembleRef = paste0("Reference_", Reference)
+      self$Ensemble$Samples$CCA[[EnsembleFactnum]][[EnsembleRef]]$ClusterRes[[EnsembleClustnum]] = AlClusterRes
+      self$Ensemble$Samples$CCA[[EnsembleFactnum]][[EnsembleRef]]$Embed = Aligned_Embed
+    },
+
+    #Ensemble sample clustering by standardised ConcATenation of embeddings (CAT)
+    #' @description
+        #' Create an ensemble clustering result by standardising and
+        #' concatenating the sample representations of the multi-omics integration
+        #' methods and clustering the result with k-means, with no alignment step.
+        #' This is the control for `run_Ensemble_Sample_CCA()`: the two methods
+        #' use identical representations and identical clustering and differ only
+        #' in whether the representations are aligned by canonical correlation
+        #' first, so the difference between them isolates what that alignment
+        #' contributes. It also needs no reference method, and so avoids the
+        #' dependence of `run_Ensemble_Sample_CCA()` on which reference is chosen.
+    #' @param Clusters Number of clusters to create.
+    #' @param Seed Integer seed set immediately before the k-means call, so the
+    #' result is reproducible in isolation rather than depending on the state of
+    #' the global random number stream. Default is `NULL`.
+    #' @param Factors Number of latent factors or components the embeddings were
+    #' created with.
+    #' @param SNFDistance Which distance used to calculate SNF results to be
+    #' included. Must be one of: `"euclidean squared"` (default), `"euclidean"`,
+    #' `"manhattan"`, `"minkowksi 0.25"`, `"minkowski 0.5"`, `"minkowski 3"` or
+    #' `"minkowski 4"`.
+    #' @param GAUDIMethod Which GAUDI clustering method to take results from.
+    #' Default is `"Kmeans"`.
+    #' @param KmeansNStart Number of random starting configurations for the
+    #' k-means cluster assignment. k-means converges to a local optimum that
+    #' depends on its random starting centres; with a single start the result is
+    #' not reproducible and frequently misses the tightest solution. Default is 25.
+    #' @returns A list of results. Ensemble sample cluster assignment is stored in
+    #' $Ensemble$Samples$CAT$ClusterRes by factor number and cluster number,
+    #' and the concatenated standardised representation in
+    #' $Ensemble$Samples$CAT$Embed by factor number.
+    run_Ensemble_Sample_CAT = function(Clusters = NULL,
+                                       Seed = NULL,
+                                       Factors = NULL,
+                                       SNFDistance = "euclidean squared",
+                                       GAUDIMethod = "Kmeans",
+                                       KmeansNStart = 25){
+      Samples = Ensemble_Sample_Names(Preprocessed_Omics = self$Preprocessed_Omics,
+                                      Omics = self$Omics)
+      EmbedList = Ensemble_Embedding_List(Samples = Samples,
+                                          CoordData = self$Multi_Omics$CoordData,
+                                          Fit = self$Multi_Omics$Fit,
+                                          ClusterRes = self$Multi_Omics$ClusterRes,
+                                          Factors = Factors,
+                                          SNFDistance = SNFDistance,
+                                          GAUDIMethod = GAUDIMethod)
+      if(length(EmbedList) < 2){
+        stop(paste0("Fewer than 2 embeddings with ", Factors, " factors available,
+                    run additional multi-omics integration methods to perform ensemble CAT"))
+      }
+      Concat_Embed = Ensemble_Concat_Embeddings(EmbedList = EmbedList, Samples = Samples)
+
+      if(!is.null(Seed)) set.seed(Seed)
+      Concat_Clust = stats::kmeans(Concat_Embed, centers = Clusters, nstart = KmeansNStart)$cluster
+      ClusterRes = data.frame(row.names = Samples,
+                              Cluster = Concat_Clust,
+                              stringsAsFactors = FALSE)
+      EnsembleClustnum = paste0("Clusters_", Clusters)
+      EnsembleFactnum = paste0("Embedding_", Factors)
+      self$Ensemble$Samples$CAT[[EnsembleFactnum]]$ClusterRes[[EnsembleClustnum]] = ClusterRes
+      self$Ensemble$Samples$CAT[[EnsembleFactnum]]$Embed = Concat_Embed
+    },
+
+    #Ensemble sample clustering by CCA alignment followed by UMAP (CCA_UMAP)
+    #' @description
+    #' Create an ensemble clustering result by aligning the sample
+    #' representations of the multi-omics integration methods to a reference
+    #' method by canonical correlation exactly as `run_Ensemble_Sample_CCA()`
+    #' does, then reducing the aligned representation with UMAP before k-means
+    #' rather than clustering it directly. Comparing this with
+    #' `run_Ensemble_Sample_CCA()` isolates the effect of the non-linear
+    #' reduction while holding the representation fixed, and comparing it with
+    #' `run_Ensemble_Sample_CAT_UMAP()` isolates the effect of the alignment
+    #' while holding the reduction fixed.
+    #' @param Clusters Number of clusters to create.
+    #' @param Seed Integer seed set before both the UMAP and the k-means call, so
+    #' the result is reproducible in isolation. Default is `NULL`.
+    #' @param Reference Multi-omics integration embedding to be used as reference
+    #' for CCA alignment. Default is `"MoCluster"`.
+    #' @param Factors Number of latent factors or components the embeddings were
+    #' created with.
+    #' @param SNFDistance Which distance used to calculate SNF results to be
+    #' included. Must be one of: `"euclidean squared"` (default), `"euclidean"`,
+    #' `"manhattan"`, `"minkowksi 0.25"`, `"minkowski 0.5"`, `"minkowski 3"` or
+    #' `"minkowski 4"`.
+    #' @param GAUDIMethod Which GAUDI clustering method to take results from.
+    #' Default is `"Kmeans"`.
+    #' @param UMAPNeighbors Size of the local neighborhood used for manifold
+    #' approximation. Default is 15, reduced automatically when there are too few
+    #' samples to support it.
+    #' @param UMAPDimensions Number of dimensions to reduce to. Default is `NULL`,
+    #' which uses `Clusters` dimensions, bounded below by 2 and above by the
+    #' number of available columns.
+    #' @param UMAPMinDist Effective minimum distance between embedded points.
+    #' Default is 0.1.
+    #' @param KmeansNStart Number of random starting configurations for the
+    #' k-means cluster assignment. k-means converges to a local optimum that
+    #' depends on its random starting centres; with a single start the result is
+    #' not reproducible and frequently misses the tightest solution. Default is 25.
+    #' @returns A list of results. Ensemble sample cluster assignment is stored in
+    #' $Ensemble$Samples$CCA_UMAP$ClusterRes by factor number, reference method
+    #' and cluster number. The UMAP embedding matrix is stored in
+    #' $Ensemble$Samples$CCA_UMAP$EmbeddingMat by factor number, CCA reference
+    #' method and cluster number.
+    #' @references McInnes L, Healy J, Melville J. UMAP: Uniform Manifold
+    #' Approximation and Projection for Dimension Reduction. arXiv:1802.03426.
+    #' 2018.
+    run_Ensemble_Sample_CCA_UMAP = function(Clusters = NULL,
+                                            Seed = NULL,
+                                            Reference = "MoCluster",
+                                            Factors = NULL,
+                                            SNFDistance = "euclidean squared",
+                                            GAUDIMethod = "Kmeans",
+                                            UMAPNeighbors = 15,
+                                            UMAPDimensions = NULL,
+                                            UMAPMinDist = 0.1,
+                                            KmeansNStart = 25){
+      Samples = Ensemble_Sample_Names(Preprocessed_Omics = self$Preprocessed_Omics,
+                                      Omics = self$Omics)
+      EmbedList = Ensemble_Embedding_List(Samples = Samples,
+                                          CoordData = self$Multi_Omics$CoordData,
+                                          Fit = self$Multi_Omics$Fit,
+                                          ClusterRes = self$Multi_Omics$ClusterRes,
+                                          Factors = Factors,
+                                          SNFDistance = SNFDistance,
+                                          GAUDIMethod = GAUDIMethod)
+      if(length(EmbedList) < 2){
+        stop(paste0("Fewer than 2 embeddings with ", Factors, " factors available, run additional methods to perform ensemble CCA_UMAP"))
+      }
+      Aligned_Embed = Ensemble_Align_CCA(EmbedList = EmbedList,
+                                         Reference = Reference,
+                                         Samples = Samples)
+      #The aligned matrix is standardised before UMAP because the canonical
+      #projection leaves the reference on its raw scale while compressing the
+      #others, so without this the reference would dominate the neighbour graph.
+      Aligned_Embed = Ensemble_Concat_Embeddings(EmbedList = list(Aligned_Embed),
+                                                 Samples = Samples)
+
+      Ensemble_Clustering = Ensemble_Cluster_UMAP(Embed = Aligned_Embed,
+                                                  Clusters = Clusters,
+                                                  Samples = Samples,
+                                                  UMAPNeighbors = UMAPNeighbors,
+                                                  UMAPDimensions = UMAPDimensions,
+                                                  UMAPMinDist = UMAPMinDist,
+                                                  KmeansNStart = KmeansNStart,
+                                                  Seed = Seed)
+      if(is.null(Ensemble_Clustering)) return(invisible(NULL))
+
+      ClusterRes = data.frame(row.names = Samples,
+                              Cluster = Ensemble_Clustering$ClusterRes,
+                              stringsAsFactors = FALSE)
+      EnsembleClustnum = paste0("Clusters_", Clusters)
+      EnsembleFactnum = paste0("Embedding_", Factors)
+      EnsembleRef = paste0("Reference_", Reference)
+      self$Ensemble$Samples$CCA_UMAP[[EnsembleFactnum]][[EnsembleRef]]$ClusterRes[[EnsembleClustnum]] = ClusterRes
+      self$Ensemble$Samples$CCA_UMAP[[EnsembleFactnum]][[EnsembleRef]]$Embed = Ensemble_Clustering$Embed
+    },
+
+    #Ensemble sample clustering by concatenation followed by UMAP (CAT_UMAP)
+    #' @description
+        #' Create an ensemble clustering result by standardising and
+        #' concatenating the sample representations of the multi-omics integration
+        #' methods, reducing the result with UMAP, and clustering the reduced
+        #' coordinates with k-means. Every other ensemble method in this package
+        #' combines its inputs linearly, by averaging co-association counts, by
+        #' classical multidimensional scaling or by canonical correlation, so none
+        #' of them can recover structure that is not linearly separable. Replacing
+        #' the linear step with UMAP can. `run_Ensemble_Sample_CAT()` is the
+        #' control that separates the effect of the non-linear reduction from the
+        #' effect of dropping the reference method.
+    #' @param Clusters Number of clusters to create.
+    #' @param Seed Integer seed set before both the UMAP and the k-means call, so
+    #' the result is reproducible in isolation. Default is `NULL`.
+    #' @param Factors Number of latent factors or components the embeddings were
+    #' created with.
+    #' @param SNFDistance Which distance used to calculate SNF results to be
+    #' included. Must be one of: `"euclidean squared"` (default), `"euclidean"`,
+    #' `"manhattan"`, `"minkowksi 0.25"`, `"minkowski 0.5"`, `"minkowski 3"` or
+    #' `"minkowski 4"`.
+    #' @param GAUDIMethod Which GAUDI clustering method to take results from.
+    #' Default is `"Kmeans"`.
+    #' @param UMAPNeighbors Size of the local neighborhood used for manifold
+    #' approximation. Default is 15, reduced automatically when there are too few
+    #' samples to support it.
+    #' @param UMAPDimensions Number of dimensions to reduce to. Default is `NULL`,
+    #' which uses `Clusters` dimensions, bounded below by 2 and above by the
+    #' number of available columns.
+    #' @param UMAPMinDist Effective minimum distance between embedded points.
+    #' Default is 0.1.
+    #' @param KmeansNStart Number of random starting configurations for the
+    #' k-means cluster assignment. k-means converges to a local optimum that
+    #' depends on its random starting centres; with a single start the result is
+    #' not reproducible and frequently misses the tightest solution. Default is 25.
+    #' @returns A list of results. Ensemble sample cluster assignment is stored in
+    #' $Ensemble$Samples$CAT_UMAP$ClusterRes by factor number and cluster number,
+    #' and the UMAP coordinates in $Ensemble$Samples$CAT_UMAP$Embed by
+    #' factor and cluster number.
+    #' @references McInnes L, Healy J, Melville J. UMAP: Uniform Manifold
+    #' Approximation and Projection for Dimension Reduction. arXiv:1802.03426.
+    #' 2018.
+    run_Ensemble_Sample_CAT_UMAP = function(Clusters = NULL,
+                                            Seed = NULL,
+                                            Factors = NULL,
+                                            SNFDistance = "euclidean squared",
+                                            GAUDIMethod = "Kmeans",
+                                            UMAPNeighbors = 15,
+                                            UMAPDimensions = NULL,
+                                            UMAPMinDist = 0.1,
+                                            KmeansNStart = 25){
+      Samples = Ensemble_Sample_Names(Preprocessed_Omics = self$Preprocessed_Omics,
+                                      Omics = self$Omics)
+      EmbedList = Ensemble_Embedding_List(Samples = Samples,
+                                          CoordData = self$Multi_Omics$CoordData,
+                                          Fit = self$Multi_Omics$Fit,
+                                          ClusterRes = self$Multi_Omics$ClusterRes,
+                                          Factors = Factors,
+                                          SNFDistance = SNFDistance,
+                                          GAUDIMethod = GAUDIMethod)
+      if(length(EmbedList) < 2){
+        stop(paste0("Fewer than 2 embeddings with ", Factors, " factors available,
+                    run additional multi-omics integration methods to perform ensemble CAT_UMAP"))
+      }
+      Concat_Embed = Ensemble_Concat_Embeddings(EmbedList = EmbedList, Samples = Samples)
+
+      Ensemble_Clustering = Ensemble_Cluster_UMAP(Embed = Concat_Embed,
+                                                  Clusters = Clusters,
+                                                  Samples = Samples,
+                                                  UMAPNeighbors = UMAPNeighbors,
+                                                  UMAPDimensions = UMAPDimensions,
+                                                  UMAPMinDist = UMAPMinDist,
+                                                  KmeansNStart = KmeansNStart,
+                                                  Seed = Seed)
+      if(is.null(Ensemble_Clustering)) return(invisible(NULL))
+
+      ClusterRes = data.frame(row.names = Samples,
+                              Cluster = Ensemble_Clustering$ClusterRes,
+                              stringsAsFactors = FALSE)
+      EnsembleClustnum = paste0("Clusters_", Clusters)
+      EnsembleFactnum = paste0("Embedding_", Factors)
+      self$Ensemble$Samples$CAT_UMAP[[EnsembleFactnum]]$ClusterRes[[EnsembleClustnum]] = ClusterRes
+      self$Ensemble$Samples$CAT_UMAP[[EnsembleFactnum]]$Embed = Ensemble_Clustering$Embed
     },
 
     #Feature hierarchical clustering
@@ -2329,11 +2797,11 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' $Ensemble$Features[[`Method`]]$HClust. Feature dendrogram, stored by
     #' feature ensemble method in $Plots$Dendrogram$Features. Factor distance
     #' matrix, stored in $Ensemble$Factors$Concatenation$DistanceMatrix. Only
-    #' available for `Method` `"Concatenation"`. Factor hierarchical clustering
+    #' available for `"Method = "Concatenation""`. Factor hierarchical clustering
     #' tree, stored in $Ensemble$Factors$Concatenation$HClust. Only available
-    #' for `Method` `"Concatenation"`. Factor dendrogram, stored in
-    #' $Plots$Dendrogram$Factors$Concatenation. Only available for `Method`
-    #' `"Concatenation"`.
+    #' for `"Method = "Concatenation""`. Factor dendrogram, stored in
+    #' $Plots$Dendrogram$Factors$Concatenation. Only available for `"Method =
+    #' "Concatenation""`.
     run_Ensemble_Integration_Feature = function(Method = "Average",
                                                 nFactors = NULL,
                                                 Distance = "euclidean",
@@ -2385,7 +2853,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' considered by the statistics. Default is 20.
     #' @returns The optimal number of feature clusters, stored in
     #' $Ensemble$Features[[`Method`]]$OptimalClusters by
-    #' `run_Feature_Ensemble_HClust` `Method` as available.
+    #' `run_Feature_Ensemble_HClust` `"Method"` as available.
     #' @references Studer M (2013). “WeightedCluster Library Manual: A practical
     #' guide to creating typologies of trajectories in the social sciences with
     #' R.” LIVES Working Papers 24.
@@ -2406,7 +2874,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
         self$Ensemble$Features$Concatenation$OptimalClusters = FeatureOptClust$OptClust$K
       }
       if(is.null(self$Ensemble$Features$Average$HClust) & is.null(self$Ensemble$Features$Concatenation$HClust)){
-        stop("No feature distance matrix available, run run_Feature_Ensemble_HClust first")
+        stop("No feature distance matrix available, run run_Ensemble_Integration_Feature first")
       }
     },
 
@@ -2437,7 +2905,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
                                                   MaxClusters = MaxClusters)
         self$Ensemble$Factors$OptimalClusters = FactorOptClust$OptClust$K
       }else{
-        stop("No factor distance matrix available, run run_Feature_Ensemble_HClust with Method = Concatenation first")
+        stop("No factor distance matrix available, run run_Ensemble_Integration_Feature with Method = Concatenation first")
       }
     },
 
@@ -2457,9 +2925,9 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' required if `Clusters` is an integer. Must be one of: `"Average"` or
     #' `"Concatenation"`.
     #' @returns A list of results. Feature clustering result, stored by
-    #' `run_Feature_Ensemble_HClust` `Method` in
+    #' `run_Feature_Ensemble_HClust` `"Method"` in
     #' $Ensemble$Features[[`Method`]]$ClusterRes. Feature dendrogram with
-    #' cluster assignment, stored by `run_Feature_Ensemble_HClust` `Method` in
+    #' cluster assignment, stored by `run_Feature_Ensemble_HClust` `"Method"` in
     #' $Plots$Dendrogram$Features.
     run_Feature_Clustering = function(Clusters = NULL, #Manual cluster number
                                       Method = NULL #Average or Concatenation
@@ -2480,7 +2948,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
           self$Plots$Dendrogram$Features$Concatenation = FeatClust$Dendro
         }
         if(is.null(self$Ensemble$Features$Average$HClust) & is.null(self$Ensemble$Features$Concatenation$HClust)){
-          stop("No feature hclust available, run run_Feature_Ensemble_HClust first")
+          stop("No feature hclust available, run run_Ensemble_Integration_Feature first")
         }
       }else{
         if(Method == "Average" | Method == "average" | Method == "Av" | Method == "av"){
@@ -2490,7 +2958,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
             self$Ensemble$Features$Average$ClusterRes = FeatClust$Clusters
             self$Plots$Dendrogram$Features$Average = FeatClust$Dendro
           }else{
-            stop("No feature hclust available, run run_Feature_Ensemble_HClust first")
+            stop("No feature hclust available, run run_Ensemble_Integration_Feature first")
           }
         }else if(Method == "Concatenation" | Method == "concatenation" | Method == "Concat" | Method == "concat" | Method == "Con" | Method == "con"){
           if(!is.null(self$Ensemble$Features$Concatenation$HClust)){
@@ -2499,7 +2967,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
             self$Ensemble$Features$Concatenation$ClusterRes = FeatClust$Clusters
             self$Plots$Dendrogram$Features$Concatenation = FeatClust$Dendro
           }else{
-            stop("No feature hclust available, run run_Feature_Ensemble_HClust first")
+            stop("No feature hclust available, run run_Ensemble_Integration_Feature first")
           }
         }else{
           stop("Unknown feature ensemble method provided, please select either Average or Concatenation")
@@ -2567,11 +3035,11 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' @param MaxGenesPerTerm Maximum number of genes annotated per ontology
     #' term to be included for testing. Default is 500.
     #' @returns A list of results. A dataframe with all features of the omics
-    #' type per cluster of ensembled features. Stored by `Method` in
+    #' type per cluster of ensembled features. Stored by `"Method"` in
     #' $Ensemble$Features[[`Method`]]$ORA[[`OmicsName`]][[`Clusters`]]$FeatureList.
-    #' Enrichment result of class `enrichResult` per cluster of ensembled
+    #' Enrichment result of class `"enrichResult"` per cluster of ensembled
     #' features, if that cluster contains features of the selected omics type
-    #' and enrichment analysis resulted in enriched terms. Stored by `Method` in
+    #' and enrichment analysis resulted in enriched terms. Stored by `"Method"` in
     #' $Ensemble$Features[[`Method`]]$ORA[[`OmicsName`]][[`Clusters`]]$Enrichment.
     #' @references   * Yu G (2024). “Thirteen years of clusterProfiler.” The
     #'   Innovation, 5(6), 100722.
@@ -2643,10 +3111,15 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' based on hierarchical clustering. Default is `TRUE`. If `FALSE`, the
     #' features will be ordered as in the preprocessed datasets.
     #' @param MethodResults For which clustering assignment the heatmap is to be
-    #' plotted. Must be one of: `"all"` (default), `"MoCluster"`, `"jNMF"`, `"iNMF"`,
-    #' `"LRAcluster"`, `"COCA"`, `"GAUDI"`, `"SNF"`, `"CHC"`, `"MDS_HC"` or `"CCA"`.
+    #' plotted. Must be one of: `"all"` (default), `"ensemble"` `"MoCluster"`,
+    #' `"jNMF"`, `"iNMF"`, `"LRAcluster"`, `"COCA"`, `"GAUDI"`, `"SNF"`, `"CHC"`,
+    #' `"CCC"`, `"MDS_HC"`, `"MDS_km"`, `"MPA"`, `"CCA"`, `"CAT"`,
+    #' `"CCA_UMAP"` or `"CAT_UMAP"`.
     #' If all is selected, heatmaps with cluster assignments are created for all
     #' run methods.
+    #' If ensemble is selected, heatmaps with cluster assignments are created for
+    #' all ensemble sample clustering methods. Results for the multi-omics
+    #' integration methods are not included.
     #' @param YFontSize Font size of the feature labels on the Y-axis. Default
     #' is 5.
     #' @param XFontSize Font size of the sample labels on the X-axis. Default
@@ -2743,7 +3216,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
       }
 
       #Heatmap for consensus clustering result
-      if(!is.null(self$Ensemble$Samples$CHC$ClusterRes) & (MethodResults == "CHC" | MethodResults == "all")){
+      if(!is.null(self$Ensemble$Samples$CHC$ClusterRes) & (MethodResults == "CHC" | MethodResults == "all" | MethodResults == "ensemble")){
         ConsensusClustNum = names(self$Ensemble$Samples$CHC$ClusterRes)
         for(clustnum in ConsensusClustNum){
           ClustData = self$Ensemble$Samples$CHC$ClusterRes[[clustnum]]
@@ -2760,7 +3233,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
           }
         }
       }
-      if(!is.null(self$Ensemble$Samples$MDS_HC$ClusterRes) & (MethodResults == "MDS_HC" | MethodResults == "all")){
+      if(!is.null(self$Ensemble$Samples$MDS_HC$ClusterRes) & (MethodResults == "MDS_HC" | MethodResults == "all" | MethodResults == "ensemble")){
         ConsensusClustNum = names(self$Ensemble$Samples$MDS_HC$ClusterRes)
         for(clustnum in ConsensusClustNum){
           ClustData = self$Ensemble$Samples$MDS_HC$ClusterRes[[clustnum]]
@@ -2777,23 +3250,142 @@ Ensemble_Integration_Suite <- R6::R6Class(
           }
         }
       }
-      if(!is.null(self$Ensemble$Samples$CCA) & (MethodResults == "CCA" | MethodResults == "all")){
+      if(!is.null(self$Ensemble$Samples$MDS_km$ClusterRes) & (MethodResults == "MDS_km" | MethodResults == "all" | MethodResults == "ensemble")){
+        ConsensusClustNum = names(self$Ensemble$Samples$MDS_km$ClusterRes)
+        for(clustnum in ConsensusClustNum){
+          ClustData = self$Ensemble$Samples$MDS_km$ClusterRes[[clustnum]]
+          n = strsplit(clustnum, split = "_")[[1]][2]
+          for(omics in HeatmapOmics){
+            Title = paste0("Heatmap of ", omics, ", ", n, " clusters by MDS_km ensemble")
+            Plot = Heatmap_Cluster(Data = Data[[omics]],
+                                   SampleClusters = ClustData,
+                                   FeatureClusters = FeatureClustering,
+                                   YFontSize = YFontSize,
+                                   XFontSize = XFontSize,
+                                   Title = Title)
+            self$Plots$Cluster_Heatmap$Ensemble$MDS_km[[clustnum]][[omics]] = Plot
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$MPA$ClusterRes) & (MethodResults == "MPA" | MethodResults == "all" | MethodResults == "ensemble")){
+        ConsensusClustNum = names(self$Ensemble$Samples$MPA$ClusterRes)
+        for(clustnum in ConsensusClustNum){
+          ClustData = self$Ensemble$Samples$MPA$ClusterRes[[clustnum]]
+          n = strsplit(clustnum, split = "_")[[1]][2]
+          for(omics in HeatmapOmics){
+            Title = paste0("Heatmap of ", omics, ", ", n, " clusters by MPA ensemble")
+            Plot = Heatmap_Cluster(Data = Data[[omics]],
+                                   SampleClusters = ClustData,
+                                   FeatureClusters = FeatureClustering,
+                                   YFontSize = YFontSize,
+                                   XFontSize = XFontSize,
+                                   Title = Title)
+            self$Plots$Cluster_Heatmap$Ensemble$MPA[[clustnum]][[omics]] = Plot
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CCA) & (MethodResults == "CCA" | MethodResults == "all" | MethodResults == "ensemble")){
         CCAFactNum = names(self$Ensemble$Samples$CCA)
         for(factnum in CCAFactNum){
-          CCAClustNum = names(self$Ensemble$Samples$CCA[[factnum]]$ClusterRes)
-          for(clustnum in CCAClustNum){
-            ClustData = self$Ensemble$Samples$CCA[[factnum]]$ClusterRes[[clustnum]]
+          CCARef = names(self$Ensemble$Samples$CCA[[factnum]])
+          for(ref in CCARef){
+            CCAClustNum = names(self$Ensemble$Samples$CCA[[factnum]][[ref]]$ClusterRes)
+            r = strsplit(ref, split = "_")[[1]][2]
+            for(clustnum in CCAClustNum){
+              ClustData = self$Ensemble$Samples$CCA[[factnum]][[ref]]$ClusterRes[[clustnum]]
+              n = strsplit(clustnum, split = "_")[[1]][2]
+              for(omics in HeatmapOmics){
+                Title = paste0("Heatmap of ", omics, ", ", n, " clusters by CCA ensemble, with ", r, " as reference")
+                Plot = Heatmap_Cluster(Data = Data[[omics]],
+                                       SampleClusters = ClustData,
+                                       FeatureClusters = FeatureClustering,
+                                       YFontSize = YFontSize,
+                                       XFontSize = XFontSize,
+                                       Title = Title)
+                self$Plots$Cluster_Heatmap$Ensemble$CCA[[factnum]][[ref]][[clustnum]][[omics]] = Plot
+              }
+            }
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CAT) & (MethodResults == "CAT" | MethodResults == "all" | MethodResults == "ensemble")){
+        CATFactNum = names(self$Ensemble$Samples$CAT)
+        for(factnum in CATFactNum){
+          CATClustNum = names(self$Ensemble$Samples$CAT[[factnum]]$ClusterRes)
+          for(clustnum in CATClustNum){
+            ClustData = self$Ensemble$Samples$CAT[[factnum]]$ClusterRes[[clustnum]]
             n = strsplit(clustnum, split = "_")[[1]][2]
             for(omics in HeatmapOmics){
-              Title = paste0("Heatmap of ", omics, ", ", n, " clusters by CCA ensemble")
+              Title = paste0("Heatmap of ", omics, ", ", n, " clusters by CAT ensemble")
               Plot = Heatmap_Cluster(Data = Data[[omics]],
                                      SampleClusters = ClustData,
                                      FeatureClusters = FeatureClustering,
                                      YFontSize = YFontSize,
                                      XFontSize = XFontSize,
                                      Title = Title)
-              self$Plots$Cluster_Heatmap$Ensemble$CCA[[clustnum]][[omics]] = Plot
+              self$Plots$Cluster_Heatmap$Ensemble$CAT[[factnum]][[clustnum]][[omics]] = Plot
             }
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CCA_UMAP) & (MethodResults == "CCA_UMAP" | MethodResults == "all" | MethodResults == "ensemble")){
+        CCAFactNum = names(self$Ensemble$Samples$CCA_UMAP)
+        for(factnum in CCAFactNum){
+          CCARef = names(self$Ensemble$Samples$CCA_UMAP[[factnum]])
+          for(ref in CCARef){
+            CCAClustNum = names(self$Ensemble$Samples$CCA_UMAP[[factnum]][[ref]]$ClusterRes)
+            r = strsplit(ref, split = "_")[[1]][2]
+            for(clustnum in CCAClustNum){
+              ClustData = self$Ensemble$Samples$CCA_UMAP[[factnum]][[ref]]$ClusterRes[[clustnum]]
+              n = strsplit(clustnum, split = "_")[[1]][2]
+              for(omics in HeatmapOmics){
+                Title = paste0("Heatmap of ", omics, ", ", n, " clusters by CCA_UMAP ensemble, with ", r, " as reference")
+                Plot = Heatmap_Cluster(Data = Data[[omics]],
+                                       SampleClusters = ClustData,
+                                       FeatureClusters = FeatureClustering,
+                                       YFontSize = YFontSize,
+                                       XFontSize = XFontSize,
+                                       Title = Title)
+                self$Plots$Cluster_Heatmap$Ensemble$CCA_UMAP[[factnum]][[ref]][[clustnum]][[omics]] = Plot
+              }
+            }
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CAT_UMAP) & (MethodResults == "CAT_UMAP" | MethodResults == "all" | MethodResults == "ensemble")){
+        CATFactNum = names(self$Ensemble$Samples$CAT_UMAP)
+        for(factnum in CATFactNum){
+          CATClustNum = names(self$Ensemble$Samples$CAT_UMAP[[factnum]]$ClusterRes)
+          for(clustnum in CATClustNum){
+            ClustData = self$Ensemble$Samples$CAT_UMAP[[factnum]]$ClusterRes[[clustnum]]
+            n = strsplit(clustnum, split = "_")[[1]][2]
+            for(omics in HeatmapOmics){
+              Title = paste0("Heatmap of ", omics, ", ", n, " clusters by CAT_UMAP ensemble")
+              Plot = Heatmap_Cluster(Data = Data[[omics]],
+                                     SampleClusters = ClustData,
+                                     FeatureClusters = FeatureClustering,
+                                     YFontSize = YFontSize,
+                                     XFontSize = XFontSize,
+                                     Title = Title)
+              self$Plots$Cluster_Heatmap$Ensemble$CAT_UMAP[[factnum]][[clustnum]][[omics]] = Plot
+            }
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CCC$ClusterRes) & (MethodResults == "CCC" | MethodResults == "all" | MethodResults == "ensemble")){
+        ConsensusClustNum = names(self$Ensemble$Samples$CCC$ClusterRes)
+        for(clustnum in ConsensusClustNum){
+          ClustData = self$Ensemble$Samples$CCC$ClusterRes[[clustnum]]
+          n = strsplit(clustnum, split = "_")[[1]][2]
+          for(omics in HeatmapOmics){
+            Title = paste0("Heatmap of ", omics, ", ", n, " clusters by CCC ensemble")
+            Plot = Heatmap_Cluster(Data = Data[[omics]],
+                                   SampleClusters = ClustData,
+                                   FeatureClusters = FeatureClustering,
+                                   YFontSize = YFontSize,
+                                   XFontSize = XFontSize,
+                                   Title = Title)
+            self$Plots$Cluster_Heatmap$Ensemble$CCC[[clustnum]][[omics]] = Plot
           }
         }
       }
@@ -2908,19 +3500,106 @@ Ensemble_Integration_Suite <- R6::R6Class(
           self$Plots$Multi_Omics_Heatmap$Ensemble$MDS_HC[[clust]] = ClusterHeatmap
         }
       }
+      if(!is.null(self$Ensemble$Samples$MDS_km$ClusterRes)){
+        EnsembleClustNum = names(self$Ensemble$Samples$MDS_km$ClusterRes)
+        for(clust in EnsembleClustNum){
+          ClustRes = self$Ensemble$Samples$MDS_km$ClusterRes[[clust]]
+          ClusterHeatmap = MultiOmicsHeatmapClustered(OmicsData = Data,
+                                                      ClusterRes = ClustRes,
+                                                      LegendNames = LegendNames,
+                                                      MetadataColumn = MetadataFeatures,
+                                                      MetaData = Metadata)
+          self$Plots$Multi_Omics_Heatmap$Ensemble$MDS_km[[clust]] = ClusterHeatmap
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$MPA$ClusterRes)){
+        EnsembleClustNum = names(self$Ensemble$Samples$MPA$ClusterRes)
+        for(clust in EnsembleClustNum){
+          ClustRes = self$Ensemble$Samples$MPA$ClusterRes[[clust]]
+          ClusterHeatmap = MultiOmicsHeatmapClustered(OmicsData = Data,
+                                                      ClusterRes = ClustRes,
+                                                      LegendNames = LegendNames,
+                                                      MetadataColumn = MetadataFeatures,
+                                                      MetaData = Metadata)
+          self$Plots$Multi_Omics_Heatmap$Ensemble$MPA[[clust]] = ClusterHeatmap
+        }
+      }
       if(!is.null(self$Ensemble$Samples$CCA)){
         CCAFactNum = names(self$Ensemble$Samples$CCA)
         for(factnum in CCAFactNum){
-          EnsembleClustNum = names(self$Ensemble$Samples$CCA[[factnum]]$ClusterRes)
+          CCARef = names(self$Ensemble$Samples$CCA[[factnum]])
+          for(ref in CCARef){
+            EnsembleClustNum = names(self$Ensemble$Samples$CCA[[factnum]][[ref]]$ClusterRes)
+            for(clust in EnsembleClustNum){
+              ClustRes = self$Ensemble$Samples$CCA[[factnum]][[ref]]$ClusterRes[[clust]]
+              ClusterHeatmap = MultiOmicsHeatmapClustered(OmicsData = Data,
+                                                          ClusterRes = ClustRes,
+                                                          LegendNames = LegendNames,
+                                                          MetadataColumn = MetadataFeatures,
+                                                          MetaData = Metadata)
+              self$Plots$Multi_Omics_Heatmap$Ensemble$CCA[[factnum]][[ref]][[clust]] = ClusterHeatmap
+            }
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CAT)){
+        CATFactNum = names(self$Ensemble$Samples$CAT)
+        for(factnum in CATFactNum){
+          EnsembleClustNum = names(self$Ensemble$Samples$CAT[[factnum]]$ClusterRes)
           for(clust in EnsembleClustNum){
-            ClustRes = self$Ensemble$Samples$CCA[[factnum]]$ClusterRes[[clust]]
+            ClustRes = self$Ensemble$Samples$CAT[[factnum]]$ClusterRes[[clust]]
             ClusterHeatmap = MultiOmicsHeatmapClustered(OmicsData = Data,
                                                         ClusterRes = ClustRes,
                                                         LegendNames = LegendNames,
                                                         MetadataColumn = MetadataFeatures,
                                                         MetaData = Metadata)
-            self$Plots$Multi_Omics_Heatmap$Ensemble$CCA[[clust]] = ClusterHeatmap
+            self$Plots$Multi_Omics_Heatmap$Ensemble$CAT[[factnum]][[clust]] = ClusterHeatmap
           }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CCA_UMAP)){
+        CCAFactNum = names(self$Ensemble$Samples$CCA_UMAP)
+        for(factnum in CCAFactNum){
+          CCARef = names(self$Ensemble$Samples$CCA_UMAP[[factnum]])
+          for(ref in CCARef){
+            EnsembleClustNum = names(self$Ensemble$Samples$CCA_UMAP[[factnum]][[ref]]$ClusterRes)
+            for(clust in EnsembleClustNum){
+              ClustRes = self$Ensemble$Samples$CCA_UMAP[[factnum]][[ref]]$ClusterRes[[clust]]
+              ClusterHeatmap = MultiOmicsHeatmapClustered(OmicsData = Data,
+                                                          ClusterRes = ClustRes,
+                                                          LegendNames = LegendNames,
+                                                          MetadataColumn = MetadataFeatures,
+                                                          MetaData = Metadata)
+              self$Plots$Multi_Omics_Heatmap$Ensemble$CCA_UMAP[[factnum]][[ref]][[clust]] = ClusterHeatmap
+            }
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CAT_UMAP)){
+        CATFactNum = names(self$Ensemble$Samples$CAT_UMAP)
+        for(factnum in CATFactNum){
+          EnsembleClustNum = names(self$Ensemble$Samples$CAT_UMAP[[factnum]]$ClusterRes)
+          for(clust in EnsembleClustNum){
+            ClustRes = self$Ensemble$Samples$CAT_UMAP[[factnum]]$ClusterRes[[clust]]
+            ClusterHeatmap = MultiOmicsHeatmapClustered(OmicsData = Data,
+                                                        ClusterRes = ClustRes,
+                                                        LegendNames = LegendNames,
+                                                        MetadataColumn = MetadataFeatures,
+                                                        MetaData = Metadata)
+            self$Plots$Multi_Omics_Heatmap$Ensemble$CAT_UMAP[[factnum]][[clust]] = ClusterHeatmap
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CCC$ClusterRes)){
+        EnsembleClustNum = names(self$Ensemble$Samples$CCC$ClusterRes)
+        for(clust in EnsembleClustNum){
+          ClustRes = self$Ensemble$Samples$CCC$ClusterRes[[clust]]
+          ClusterHeatmap = MultiOmicsHeatmapClustered(OmicsData = Data,
+                                                      ClusterRes = ClustRes,
+                                                      LegendNames = LegendNames,
+                                                      MetadataColumn = MetadataFeatures,
+                                                      MetaData = Metadata)
+          self$Plots$Multi_Omics_Heatmap$Ensemble$CCC[[clust]] = ClusterHeatmap
         }
       }
     },
@@ -2963,30 +3642,38 @@ Ensemble_Integration_Suite <- R6::R6Class(
         if(method == "GAUDI"){
           ScatterplotGAUDIClustMethod = names(self$Multi_Omics$CoordData$GAUDI)
           for(clustmethod in ScatterplotGAUDIClustMethod){
-            ScatterplotClustNum = names(self$Multi_Omics$CoordData$GAUDI[[clustmethod]])
-            for(clustnum in ScatterplotClustNum){
-              CoordData = cbind(self$Multi_Omics$CoordData$GAUDI[[clustmethod]][[clustnum]], Clusters = as.factor(self$Multi_Omics$ClusterRes$GAUDI[[clustmethod]][[clustnum]]$Cluster), Metadata = as.factor(ReqMetaData[[1]]))
-              n = strsplit(clustnum, split = "_")[[1]][2]
-              Title = paste0("Scatterplot from ", method, " with ", n, " clusters, clustered by ", clustmethod)
-              Plot = Scatterplot(Data = CoordData,
-                                 XAxis = XAxis,
-                                 YAxis = YAxis,
-                                 Width = Width,
-                                 Height = Height,
-                                 Title = Title)
-              self$Plots$Scatterplot$GAUDI[[clustmethod]][[clustnum]] = Plot
+            ScatterplotFactNum = names(self$Multi_Omics$CoordData$GAUDI[[clustmethod]])
+            ScatterplotClustNum = names(self$Multi_Omics$ClusterRes$GAUDI[[clustmethod]])
+            for(factnum in ScatterplotFactNum){
+              GAUDICoord = self$Multi_Omics$CoordData$GAUDI[[clustmethod]][[factnum]]
+              for(clustnum in ScatterplotClustNum){
+                n = strsplit(clustnum, split = "_")[[1]][2]
+                CoordData = cbind(GAUDICoord, Clusters = as.factor(self$Multi_Omics$ClusterRes$GAUDI[[clustmethod]][[clustnum]]$Cluster), Metadata = as.factor(ReqMetaData[[1]]))
+                Title = paste0("Scatterplot from ", method, " with ", n, " clusters, clustered by ", clustmethod)
+                Plot = Scatterplot(Data = CoordData,
+                                   XAxis = XAxis,
+                                   YAxis = YAxis,
+                                   Width = Width,
+                                   Height = Height,
+                                   Title = Title)
+                self$Plots$Scatterplot$GAUDI[[clustmethod]][[factnum]] = Plot
+              }
+
             }
           }
         }else{
-          ScatterplotClustNum = names(self$Multi_Omics$CoordData[[method]])
+          ScatterplotClustNum = names(self$Multi_Omics$ClusterRes[[method]])
+          ScatterplotFactNum = names(self$Multi_Omics$CoordData[[method]])
           for(clustnum in ScatterplotClustNum){
-            if(!is.null(self$Multi_Omics$ClusterRes[[method]][[clustnum]])){
-              CoordData = cbind(self$Multi_Omics$CoordData[[method]][[clustnum]], Clusters = as.factor(self$Multi_Omics$ClusterRes[[method]][[clustnum]]$Cluster), Metadata = as.factor(ReqMetaData[[1]]))
-              n = strsplit(clustnum, split = "_")[[1]][2]
-              Title = paste0("Scatterplot from ", method, " with ", n, " clusters")
-            }else{
-              CoordData = cbind(self$Multi_Omics$CoordData[[method]][[clustnum]], Metadata = as.factor(ReqMetaData[[1]]))
-              Title = paste0("Scatterplot from ", method)
+            for(factnum in ScatterplotFactNum){
+              if(!is.null(self$Multi_Omics$ClusterRes[[method]][[clustnum]])){
+                CoordData = cbind(self$Multi_Omics$CoordData[[method]][[factnum]], Clusters = as.factor(self$Multi_Omics$ClusterRes[[method]][[clustnum]]$Cluster), Metadata = as.factor(ReqMetaData[[1]]))
+                nClust = strsplit(clustnum, split = "_")[[1]][2]
+                Title = paste0("Scatterplot from ", method, " with ", nClust, " clusters")
+              }else{
+                CoordData = cbind(self$Multi_Omics$CoordData[[method]][[factnum]], Metadata = as.factor(ReqMetaData[[1]]))
+                Title = paste0("Scatterplot from ", method)
+              }
             }
             Plot = Scatterplot(Data = CoordData,
                                XAxis = XAxis,
@@ -3087,17 +3774,92 @@ Ensemble_Integration_Suite <- R6::R6Class(
           self$Plots$Clusters_Metadata$Ensemble$MDS_HC[[clustnum]] = Plot
         }
       }
+      if(!is.null(self$Ensemble$Samples$MDS_km$ClusterRes)){
+        ClustersMetadataEnsemble = names(self$Ensemble$Samples$MDS_km$ClusterRes)
+        for(clustnum in ClustersMetadataEnsemble){
+          ClustData = self$Ensemble$Samples$MDS_km$ClusterRes[[clustnum]]
+          Plot = Plot_Clusters_Metadata(MetadataColumns = MetadataFeatures,
+                                        MatchedMetadata = MetaData,
+                                        ClusterResults = ClustData)
+          self$Plots$Clusters_Metadata$Ensemble$MDS_km[[clustnum]] = Plot
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$MPA$ClusterRes)){
+        ClustersMetadataEnsemble = names(self$Ensemble$Samples$MPA$ClusterRes)
+        for(clustnum in ClustersMetadataEnsemble){
+          ClustData = self$Ensemble$Samples$MPA$ClusterRes[[clustnum]]
+          Plot = Plot_Clusters_Metadata(MetadataColumns = MetadataFeatures,
+                                        MatchedMetadata = MetaData,
+                                        ClusterResults = ClustData)
+          self$Plots$Clusters_Metadata$Ensemble$MPA[[clustnum]] = Plot
+        }
+      }
       if(!is.null(self$Ensemble$Samples$CCA)){
         CCAFactNum = names(self$Ensemble$Samples$CCA)
         for(factnum in CCAFactNum){
-          ClustersMetadataEnsemble = names(self$Ensemble$Samples$CCA[[factnum]]$ClusterRes)
+          CCARef = names(self$Ensemble$Samples$CCA[[factnum]])
+          for(ref in CCARef){
+            ClustersMetadataEnsemble = names(self$Ensemble$Samples$CCA[[factnum]][[ref]]$ClusterRes)
+            for(clustnum in ClustersMetadataEnsemble){
+              ClustData = self$Ensemble$Samples$CCA[[factnum]][[ref]]$ClusterRes[[clustnum]]
+              Plot = Plot_Clusters_Metadata(MetadataColumns = MetadataFeatures,
+                                            MatchedMetadata = MetaData,
+                                            ClusterResults = ClustData)
+              self$Plots$Clusters_Metadata$Ensemble$CCA[[factnum]][[ref]][[clustnum]] = Plot
+            }
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CAT)){
+        CATFactNum = names(self$Ensemble$Samples$CAT)
+        for(factnum in CATFactNum){
+          ClustersMetadataEnsemble = names(self$Ensemble$Samples$CAT[[factnum]]$ClusterRes)
           for(clustnum in ClustersMetadataEnsemble){
-            ClustData = self$Ensemble$Samples$CCA[[factnum]]$ClusterRes[[clustnum]]
+            ClustData = self$Ensemble$Samples$CAT[[factnum]]$ClusterRes[[clustnum]]
             Plot = Plot_Clusters_Metadata(MetadataColumns = MetadataFeatures,
                                           MatchedMetadata = MetaData,
                                           ClusterResults = ClustData)
-            self$Plots$Clusters_Metadata$Ensemble$CCA[[clustnum]] = Plot
+            self$Plots$Clusters_Metadata$Ensemble$CAT[[factnum]][[clustnum]] = Plot
           }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CCA_UMAP)){
+        CCAFactNum = names(self$Ensemble$Samples$CCA_UMAP)
+        for(factnum in CCAFactNum){
+          CCARef = names(self$Ensemble$Samples$CCA_UMAP[[factnum]])
+          for(ref in CCARef){
+            ClustersMetadataEnsemble = names(self$Ensemble$Samples$CCA_UMAP[[factnum]][[ref]]$ClusterRes)
+            for(clustnum in ClustersMetadataEnsemble){
+              ClustData = self$Ensemble$Samples$CCA_UMAP[[factnum]][[ref]]$ClusterRes[[clustnum]]
+              Plot = Plot_Clusters_Metadata(MetadataColumns = MetadataFeatures,
+                                            MatchedMetadata = MetaData,
+                                            ClusterResults = ClustData)
+              self$Plots$Clusters_Metadata$Ensemble$CCA_UMAP[[factnum]][[ref]][[clustnum]] = Plot
+            }
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CAT_UMAP)){
+        CATFactNum = names(self$Ensemble$Samples$CAT_UMAP)
+        for(factnum in CATFactNum){
+          ClustersMetadataEnsemble = names(self$Ensemble$Samples$CAT_UMAP[[factnum]]$ClusterRes)
+          for(clustnum in ClustersMetadataEnsemble){
+            ClustData = self$Ensemble$Samples$CAT_UMAP[[factnum]]$ClusterRes[[clustnum]]
+            Plot = Plot_Clusters_Metadata(MetadataColumns = MetadataFeatures,
+                                          MatchedMetadata = MetaData,
+                                          ClusterResults = ClustData)
+            self$Plots$Clusters_Metadata$Ensemble$CAT_UMAP[[factnum]][[clustnum]] = Plot
+          }
+        }
+      }
+      if(!is.null(self$Ensemble$Samples$CCC$ClusterRes)){
+        ClustersMetadataEnsemble = names(self$Ensemble$Samples$CCC$ClusterRes)
+        for(clustnum in ClustersMetadataEnsemble){
+          ClustData = self$Ensemble$Samples$CCC$ClusterRes[[clustnum]]
+          Plot = Plot_Clusters_Metadata(MetadataColumns = MetadataFeatures,
+                                        MatchedMetadata = MetaData,
+                                        ClusterResults = ClustData)
+          self$Plots$Clusters_Metadata$Ensemble$CCC[[clustnum]] = Plot
         }
       }
     },
@@ -3179,8 +3941,11 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' in the metadata files for all omics types.
     #' @param Ensemble Whether to include the ensemble sample clustering results
     #' to the Sankey plot. Must run `run_Ensemble_Sample_CHC`,
-    #' `run_Ensemble_Sample_MDS_HC` or `run_Ensemble_Sample_CCA` first. Default is
-    #' `TRUE`.
+    #' `run_Ensemble_Sample_CCC`, `run_Ensemble_Sample_MDS_HC`,
+    #' `run_Ensemble_Sample_MDS_km`, `run_Ensemble_Sample_MPA`,
+    #' `run_Ensemble_Sample_CCA`, `run_Ensemble_Sample_CAT`,
+    #' `run_Ensemble_Sample_CCA_UMAP` or `run_Ensemble_Sample_CCA_UMAP` first.
+    #' Default is `TRUE`.
     #' @param SNFDistance Which SNF distance calculated cluster assignment
     #' should be included in the plot comparing different methods. To compare
     #' the cluster assignments between SNF distances, an SNF-only Sankey plot
@@ -3191,7 +3956,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #'   * Selected: All methods + specified `SNFDistance` cluster assignments.
     #'   * SNF: All SNF distance cluster assignments.
     #'   * Full: All methods cluster assignments with all SNF distances.
-    #' Default is `TRUE`. If `FALSE`, only the first option, with all methods
+    #' Default is `FALSE`. If `TRUE`, only the first option, with all methods
     #' and the specified `SNFDistance` will be created.
     #' @returns A list of plots. Sankey plot with the cluster assignments of
     #' all multi-omics integration methods and the specified `SNFDistance`,
@@ -3204,7 +3969,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
     plot_Sankey_Methods = function(MetadataFeature = NULL, #Column of metadata used for coloring samples
                                    Ensemble = TRUE, #Whether to add consensus clustering to Sankey
                                    SNFDistance = "euclidean squared", #SNF distance to add to rest plot: euclidean, euclidean squared, manhattan, minkowski 0.25, minkowski 0.5, minkowski 3, minkowski 4
-                                   AllPlots = TRUE #whether to store all 3 plots (all methods + 1 SNF distance, all SNF distances, only non-SNF methods), or just all methods + 1 SNF
+                                   AllPlots = FALSE #whether to store all 3 plots (all methods + 1 SNF distance, all SNF distances, only non-SNF methods), or just all methods + 1 SNF
     ){
 
       #List of clustering methods used
@@ -3281,17 +4046,62 @@ Ensemble_Integration_Suite <- R6::R6Class(
           Sankey_Split_Rest_Data[[clustnum]]$EnsembleCHC = self$Ensemble$Samples$CHC$ClusterRes[[clustnum]]
           Sankey_Split_Full_Data[[clustnum]]$EnsembleCHC = self$Ensemble$Samples$CHC$ClusterRes[[clustnum]]
         }
-        MDSClustNum = names(self$Ensemble$Samples$MDS_HC$ClusterRes)
-        for(clustnum in MDSClustNum){
-          Sankey_Split_Rest_Data[[clustnum]]$EnsembleMDS = self$Ensemble$Samples$MDS_HC$ClusterRes[[clustnum]]
-          Sankey_Split_Full_Data[[clustnum]]$EnsembleMDS = self$Ensemble$Samples$MDS_HC$ClusterRes[[clustnum]]
+        CCCClustNum = names(self$Ensemble$Samples$CCC$ClusterRes)
+        for(clustnum in CCCClustNum){
+          Sankey_Split_Rest_Data[[clustnum]]$EnsembleCCC = self$Ensemble$Samples$CCC$ClusterRes[[clustnum]]
+          Sankey_Split_Full_Data[[clustnum]]$EnsembleCCC = self$Ensemble$Samples$CCC$ClusterRes[[clustnum]]
+        }
+        MDS_HC_ClustNum = names(self$Ensemble$Samples$MDS_HC$ClusterRes)
+        for(clustnum in MDS_HC_ClustNum){
+          Sankey_Split_Rest_Data[[clustnum]]$EnsembleMDS_HC = self$Ensemble$Samples$MDS_HC$ClusterRes[[clustnum]]
+          Sankey_Split_Full_Data[[clustnum]]$EnsembleMDS_HC = self$Ensemble$Samples$MDS_HC$ClusterRes[[clustnum]]
+        }
+        MDS_km_ClustNum = names(self$Ensemble$Samples$MDS_km$ClusterRes)
+        for(clustnum in MDS_km_ClustNum){
+          Sankey_Split_Rest_Data[[clustnum]]$EnsembleMDS_km = self$Ensemble$Samples$MDS_km$ClusterRes[[clustnum]]
+          Sankey_Split_Full_Data[[clustnum]]$EnsembleMDS_km = self$Ensemble$Samples$MDS_km$ClusterRes[[clustnum]]
+        }
+        MPAClustNum = names(self$Ensemble$Samples$MPA$ClusterRes)
+        for(clustnum in MPAClustNum){
+          Sankey_Split_Rest_Data[[clustnum]]$EnsembleMPA = self$Ensemble$Samples$MPA$ClusterRes[[clustnum]]
+          Sankey_Split_Full_Data[[clustnum]]$EnsembleMPA = self$Ensemble$Samples$MPA$ClusterRes[[clustnum]]
         }
         CCAFactNum = names(self$Ensemble$Samples$CCA)
         for(factnum in CCAFactNum){
-          CCAClustNum = names(self$Ensemble$Samples$CCA[[factnum]]$ClusterRes)
-          for(clustnum in CCAClustNum){
-            Sankey_Split_Rest_Data[[clustnum]]$EnsembleCCA = self$Ensemble$Samples$CCA[[factnum]]$ClusterRes[[clustnum]]
-            Sankey_Split_Full_Data[[clustnum]]$EnsembleCCA = self$Ensemble$Samples$CCA[[factnum]]$ClusterRes[[clustnum]]
+          CCARef = names(self$Ensemble$Samples$CCA[[factnum]])
+          for(ref in CCARef){
+            CCAClustNum = names(self$Ensemble$Samples$CCA[[factnum]][[ref]]$ClusterRes)
+            for(clustnum in CCAClustNum){
+              Sankey_Split_Rest_Data[[clustnum]]$EnsembleCCA = self$Ensemble$Samples$CCA[[factnum]][[ref]]$ClusterRes[[clustnum]]
+              Sankey_Split_Full_Data[[clustnum]]$EnsembleCCA = self$Ensemble$Samples$CCA[[factnum]][[ref]]$ClusterRes[[clustnum]]
+            }
+          }
+        }
+        CATFactNum = names(self$Ensemble$Samples$CAT)
+        for(factnum in CATFactNum){
+          CATClustNum = names(self$Ensemble$Samples$CAT[[factnum]]$ClusterRes)
+          for(clustnum in CATClustNum){
+            Sankey_Split_Rest_Data[[clustnum]]$EnsembleCAT = self$Ensemble$Samples$CAT[[factnum]]$ClusterRes[[clustnum]]
+            Sankey_Split_Full_Data[[clustnum]]$EnsembleCAT = self$Ensemble$Samples$CAT[[factnum]]$ClusterRes[[clustnum]]
+          }
+        }
+        CCAUMAPFactNum = names(self$Ensemble$Samples$CCA_UMAP)
+        for(factnum in CCAUMAPFactNum){
+          CCAUMAPRef = names(self$Ensemble$Samples$CCA_UMAP[[factnum]])
+          for(ref in CCAUMAPRef){
+            CCAUMAPClustNum = names(self$Ensemble$Samples$CCA_UMAP[[factnum]][[ref]]$ClusterRes)
+            for(clustnum in CCAUMAPClustNum){
+              Sankey_Split_Rest_Data[[clustnum]]$EnsembleUMAPCCA = self$Ensemble$Samples$CCA_UMAP[[factnum]][[ref]]$ClusterRes[[clustnum]]
+              Sankey_Split_Full_Data[[clustnum]]$EnsembleUMAPCCA = self$Ensemble$Samples$CCA_UMAP[[factnum]][[ref]]$ClusterRes[[clustnum]]
+            }
+          }
+        }
+        CATUMAPFactNum = names(self$Ensemble$Samples$CAT_UMAP)
+        for(factnum in CATUMAPFactNum){
+          CATUMAPClustNum = names(self$Ensemble$Samples$CAT_UMAP[[factnum]]$ClusterRes)
+          for(clustnum in CATUMAPClustNum){
+            Sankey_Split_Rest_Data[[clustnum]]$EnsembleUMAPCAT = self$Ensemble$Samples$CAT_UMAP[[factnum]]$ClusterRes[[clustnum]]
+            Sankey_Split_Full_Data[[clustnum]]$EnsembleUMAPCAT = self$Ensemble$Samples$CAT_UMAP[[factnum]]$ClusterRes[[clustnum]]
           }
         }
       }
@@ -3457,6 +4267,8 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #'   * `"Single"`: Single omics sample hierarchical clustering results. Will
     #'   plot the dendrograms for all omics types provided.
     #'   * `"Ensemble CHC"`: Ensemble CHC sample hierarchical clustering results.
+    #'   * `"Ensemble CCC"`: Ensemble CCC sample hierarchical clustering
+    #'   results.
     #'   * `"Ensemble MDS_HC"`: Ensemble MDS_HC sample hierarchical clustering
     #'   results.
     #'   * `"Ensemble Factor"`: Ensemble factor hierarchical clustering results,
@@ -3477,15 +4289,17 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' included in colored bars below the dendrogram. A string vector with the
     #' names of the metadata features as in the metadata files should be
     #' provided. Can be used in `Data` = `"Single"`,
-    #' `Data` = `"Ensemble CHC"` and `Data` = `"Ensemble MDS_HC"`.
+    #' `Data` = `"Ensemble CHC"`, `Data` = `"Ensemble CCC"` and
+    #' `Data` = `"Ensemble MDS_HC"`.
     #' @param LabelMetadata Name of the metadata feature for which the sample
     #' labels should be colored. Must be a sting with the name of the metadata
     #' feature as in the metadata files. Can be used in `Data` = `"Single"`,
-    #' `Data` = `"Ensemble CHC"` and `Data` = `"Ensemble MDS_HC"`.
+    #' `Data` = `"Ensemble CHC"`, `Data` = `"Ensemble CCC"` and
+    #' `Data` = `"Ensemble MDS_HC"`.
     #' @param MetadataHeight Height of the colored bars with metadata
     #' information. Default is 0. If 0 puts the colored bars in the dendrogram,
     #' choose a negative integer. For `Data` = `"Ensemble CHC"`,
-    #' `"Ensemble MDS_HC"`, `"Ensemble Feature Average"` or
+    #' `"Ensemble CCC"`, `"Ensemble MDS_HC"`, `"Ensemble Feature Average"` or
     #' `"Ensemble Feature Concatenation"`, a single integer should be provided.
     #' For `Data` = `"Single"` or `"Multi-Omics Feature"`, a vector of integers
     #' with the same length as the number of omics datasets must be provided.
@@ -3495,9 +4309,11 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' sample dendrogram per omics type is returned, with colored bars with
     #' metadata features below each dendrogram. If `Data` = `"Ensemble CHC"`,
     #' a sample dendrogram is returned, with colored bars with metadata features
-    #' below the dendrogram. If `Data` = `"Ensemble MDS_HC"`, a sample dendrogram
-    #' is returned, with colored bars with metadata features below the dendrogram.
-    #' If `Data` = `"Ensemble Factor"`, a factor dendrogram is returned. If
+    #' below the dendrogram. If `Data` = `"Ensemble CCC"`, a sample dendrogram is
+    #' returned, with colored bars with metadata features below the dendrogram.
+    #' If `Data` = `"Ensemble MDS_HC"`, a sample dendrogram is returned, with
+    #' colored bars with metadata features below the dendrogram. If
+    #' `Data` = `"Ensemble Factor"`, a factor dendrogram is returned. If
     #' `Data` =  `"Ensemble Feature Average"`, a feature dendrogram is returned,
     #' with a colored bar indicating the feature omics type below the dendrogram.
     #' If `Data` = `"Ensemble Feature Concatenation"`, a feature dendrogram is
@@ -3505,7 +4321,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' dendrogram. If `Data` = `"Multi-Omics Feature"`, a feature dendrogram per
     #' multi-omics integration method is returned, with colored bars indicating
     #' the feature omics type below each dendrogram.
-    plot_Dendrogram = function(Data, #Single, Ensemble CHC, Ensemble MDS_HC, Ensemble Factor, Ensemble Feature Av, Ensemble Feature Concat
+    plot_Dendrogram = function(Data, #Single, Ensemble CHC, Ensemble CCC, Ensemble MDS_HC, Ensemble Factor, Ensemble Feature Av, Ensemble Feature Concat
                                Clusters = NULL,
                                MetadataFeatures,
                                LabelMetadata,
@@ -3556,7 +4372,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
         }
       } else if(Data == "Ensemble CHC"){
         if(is.null(self$Plots$Dendrogram$Ensemble$CHC)){
-          stop("No ensemble clustering results, run run_Ensemble_CHC first")
+          stop("No ensemble clustering results, run run_Ensemble_Sample_CHC first")
         } else{
           DendroList = self$Plots$Dendrogram$Ensemble$CHC
           Meta = Match_Metadata(self$Omics$Metadata)
@@ -3590,9 +4406,45 @@ Ensemble_Integration_Suite <- R6::R6Class(
             }
           }
         }
-      } else if(Data == "Ensemble MDS_HC"){
+      } else if(Data == "Ensemble CCC"){
+        if(is.null(self$Plots$Dendrogram$Ensemble$CCC)){
+          stop("No ensemble clustering results, run run_Ensemble_Sample_CCC first")
+        } else{
+          DendroList = self$Plots$Dendrogram$Ensemble$CCC
+          Meta = Match_Metadata(self$Omics$Metadata)
+          Clusterings = names(DendroList)
+          for(Clust in Clusterings){
+            Title = "Ensemble CCC sample clustering"
+            Dendro = DendroList[[Clust]]
+            Colored_Meta = Dendrogram_Sample_Meta(MetadataFeatures = MetadataFeatures,
+                                                  Metadata = Meta,
+                                                  Dendrogram = Dendro,
+                                                  LabelMetadata = LabelMetadata)
+            if(is.null(Clusters)){
+              Dendro |> dendextend::set("labels_colors", Colored_Meta$Label) |>
+                dendextend::set("labels_cex", LabelSize) |>
+                plot(main = Title)
+              dendextend::colored_bars(colors = Colored_Meta$Vector,
+                                       dend = Dendro,
+                                       rowLabels = colnames(Colored_Meta$Vector),
+                                       cex.rowLabels = BarLabelSize,
+                                       y_shift = MetadataHeight)
+            }else{
+              Dendro |> dendextend::set("labels_colors", Colored_Meta$Label) |>
+                dendextend::set("branches_k_color", k = Clusters) |>
+                dendextend::set("labels_cex", LabelSize) |>
+                plot(main = Title)
+              dendextend::colored_bars(colors = Colored_Meta$Vector,
+                                       dend = Dendro,
+                                       rowLabels = colnames(Colored_Meta$Vector),
+                                       cex.rowLabels = BarLabelSize,
+                                       y_shift = MetadataHeight)
+            }
+          }
+        }
+      }else if(Data == "Ensemble MDS_HC"){
         if(is.null(self$Plots$Dendrogram$Ensemble$MDS_HC)){
-          stop("No ensemble clustering results, run run_Ensemble_MDS_HC first")
+          stop("No ensemble clustering results, run run_Ensemble_Sample_MDS_HC first")
         } else{
           DendroList = self$Plots$Dendrogram$Ensemble$MDS_HC
           Meta = Match_Metadata(self$Omics$Metadata)
@@ -3628,7 +4480,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
         }
       } else if(Data == "Ensemble Factor"){
         if(is.null(self$Plots$Dendrogram$Factors$Concatenation)){
-          stop("No ensemble factor results, run run_Feature_Ensemble_HClust with Method = Concatenation first")
+          stop("No ensemble factor results, run run_Ensemble_Integration_Feature with Method = Concatenation first")
         } else{
           Dendro = self$Plots$Dendrogram$Factors$Concatenation
           HClust = self$Ensemble$Factors$Concatenation$HClust
@@ -3654,7 +4506,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
         }
       } else if(Data == "Ensemble Feature Average"){
         if(is.null(self$Plots$Dendrogram$Features$Average)){
-          stop("No ensemble feature method average results, run run_Feature_Ensemble_HClust with Method = Average first")
+          stop("No ensemble feature method average results, run run_Ensemble_Integration_Feature with Method = Average first")
         } else{
           Dendro = self$Plots$Dendrogram$Features$Average
           HClust = self$Ensemble$Features$Average$HClust
@@ -3686,7 +4538,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
         }
       } else if(Data == "Ensemble Feature Concatenation"){
         if(is.null(self$Plots$Dendrogram$Features$Concatenation)){
-          stop("No ensemble feature concatenation results, run run_Feature_Ensemble_HClust with Method = Concatenation first")
+          stop("No ensemble feature concatenation results, run run_Ensemble_Integration_Feature with Method = Concatenation first")
         } else{
           Dendro = self$Plots$Dendrogram$Features$Concatenation
           HClust = self$Ensemble$Features$Concatenation$HClust
