@@ -53,6 +53,7 @@ be initialized.
 ``` r
 library(EINS)
 #> 
+set.seed(47)
 EINS_NCI60 <- Ensemble_Integration_Suite$new()
 ```
 
@@ -108,20 +109,23 @@ results for these methods can be found in the `$Multi_Omics` list.
 
 ``` r
 EINS_NCI60$run_MoCluster(Clusters = 2:8, Components = 5, Linkage = "ward.D2")
-EINS_NCI60$run_MCIA(Components = 5, PerformCluster = TRUE, Clusters = 2:8)
+EINS_NCI60$run_MCIA(Components = 5, PerformCluster = TRUE, Clusters = 2:8, Seed = 47)
 ```
 
 From the multi-omics integration results, an ensemble can be created for
-both sample subtyping and biomarker discovery.
+both sample subtyping and biomarker discovery.Nine ensemble sample
+clustering methods are available, as well as two ensemble feature
+clustering methods. In this README, we will execute two ensemble
+clustering methods, and 1 ensemble feature clustering methods. For
+further information regarding the other options, please refer to the
+EINS_Vignette.
 
-Consensus Hierarchical Clustering (CHC), Multidimensional Scaling followed 
-by Hierarchical Clustering (MDS_HC) and Canonical Correlation Analysis (CCA)
+Both Multidimensional Scaling (MDS) and Canonical Correlation Analysis
 can be performed to ensemble sample subtypes from multi-omics clustering
 results. The ensemble sample results can be found in the
 `$Ensemble$Samples` list.
 
 ``` r
-EINS_NCI60$run_Ensemble_Sample_CHC(Clusters = 5)
 EINS_NCI60$run_Ensemble_Sample_MDS_HC(Clusters = 5)
 EINS_NCI60$run_Ensemble_Sample_CCA(Clusters = 5, Reference = "MoCluster", Factors = 5)
 ```
@@ -153,7 +157,7 @@ EINS_NCI60$plot_Multi_Omics_Heatmap(MetadataFeatures = c("tissue of origin", "Ep
 EINS_NCI60$Plots$Multi_Omics_Heatmap$Ensemble$MDS_HC$Clusters_5
 ```
 
-<img src="./man/Figures/README-multi-omics heatmap-1.png" width="100%" />
+<img src="man/figures/README-multi-omics heatmap-1.png" alt="" width="100%" />
 
 A Sankey plot with the cluster assignments for multiple multi-omics
 integration methods and subtype ensemble results with the same number of
@@ -168,6 +172,3 @@ EINS_NCI60$Plots$Sankey_Methods$Selected$Clusters_5
 <img src="./man/Figures/Figure_2.png" alt="PNG of Sankey HTML widget" />
 <figcaption aria-hidden="true">PNG of Sankey HTML widget</figcaption>
 </figure>
-
-
-
