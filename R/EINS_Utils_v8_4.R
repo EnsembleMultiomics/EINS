@@ -1611,9 +1611,19 @@ Multi_Omics_Feature_Clustering = function(ScaledFeaturesData,
     Data = MethodFeatWeight[[method]]
     tData = t(Data)
     #dist creates distance matrix for rows
-    DistList[[method]] = stats::dist(tData,
-                                     method = Distance,
-                                     p = MinkowskiPower)
+    if(Distance == "minkowski"){
+      if(is.null(MinkowskiPower)){
+        DistList[[method]] = stats::dist(tData,
+                                         method = Distance)
+      }else{
+        DistList[[method]] = stats::dist(tData,
+                                         method = Distance,
+                                         p = MinkowskiPower)
+      }
+    }else{
+      DistList[[method]] = stats::dist(tData,
+                                       method = Distance)
+    }
   }
 
   HClustList = list()
@@ -1640,7 +1650,7 @@ Multi_Omics_Feature_Clustering = function(ScaledFeaturesData,
 #' @description
 #' Create a list of dataframes with the sample clustering results of the
 #' multi-omics integration methods with all calculated cluster numbers. This
-#' dataframe is used for ensemble clustering in `Ensemble_Cluster()`.
+#' dataframe is used for ensemble clustering in `Ensemble_Cluster_CHC()`.
 #' @param Data A list of dataframes, stored by multi-omics integration method
 #' and cluster number. Each dataframe contains a single cluster result.
 #' @returns A list of dataframes with samples in rows and cluster assignment
@@ -1683,13 +1693,112 @@ Ensemble_Cluster_Data = function(Data){
   return(AllClusterRes)
 }
 
+#Sample co-association matrix from a set of cluster assignments
+#' Build the sample co-association matrix from a set of cluster assignments
+#' @description
+#' For every pair of samples, the fraction of the supplied cluster assignments
+#' that place them in the same cluster. This is the consensus matrix that
+#' `Ensemble_Cluster_CHC()`, `Ensemble_Cluster_MDS()`,
+#' `Ensemble_Cluster_MDS_HC()`and `Ensemble_Cluster_MPA()` all operate on,
+#' factored out so that every method consumes an identical matrix rather than
+#' rebuilding it.
+#' @param MethodClusterResults A list of dataframes with cluster assignments per
+#' multi-omics integration method and cluster number, as created by
+#' `Ensemble_Cluster_Data()`.
+#' @param Sample_IDs Vector of sample names.
+#' @returns A square matrix of co-association frequencies averaged across
+#' multi-omics integration sample clustering results, samples in rows and columns,
+#' values between 0 and 1.
+#' @keywords internal
+#' @references Lu X, Meng J, Zhou Y, Jiang L, Yan F. MOVICS: an R package for
+#' multi-omics integration and visualization in cancer subtyping. Bioinformatics.
+#' 2021 Apr 1;36(22-23):5539-5541.
+Ensemble_CoAssociation_Matrix = function(MethodClusterResults,
+                                         Sample_IDs){
+  Ens_Matrix = matrix(0, nrow = length(Sample_IDs), ncol = length(Sample_IDs))
+  for(i in 1:length(MethodClusterResults)){
+    Ens_Clust_Result = MethodClusterResults[[i]]
+    Ens_Clust_Group = Ens_Clust_Result$Cluster
+    names(Ens_Clust_Group) = Sample_IDs
+    Ens_Clust_Ans = matrix(0, nrow = length(Sample_IDs), ncol = length(Sample_IDs))
+    rownames(Ens_Clust_Ans) = colnames(Ens_Clust_Ans) = Sample_IDs
+    Ens_Clust_Unique_Group = unique(Ens_Clust_Group)
+
+    for(j in 1:length(Ens_Clust_Unique_Group)){
+      Ens_Clust_Group_j = names(Ens_Clust_Group)[Ens_Clust_Group == Ens_Clust_Unique_Group[j]]
+      Ens_Clust_Ans[Ens_Clust_Group_j, Ens_Clust_Group_j] = 1
+    }
+    Ens_Matrix = Ens_Matrix + as.matrix(Ens_Clust_Ans)
+  }
+  Ens_Sim_Matrix = Ens_Matrix/length(MethodClusterResults)
+  rownames(Ens_Sim_Matrix) = colnames(Ens_Sim_Matrix) = Sample_IDs
+  return(Ens_Sim_Matrix)
+}
+
+#Create list of cluster results for co-association clustering
+#' Prepare the cluster results from the different multi-omics integration
+#' methods for co-association clustering
+#' @description
+#' Create a list of dataframes with the sample clustering results of the
+#' multi-omics integration methods with the specified cluster number. This
+#' dataframe is used for ensemble clustering in `Ensemble_Cluster_CHC()`.
+#' @param Data A list of dataframes, stored by multi-omics integration method
+#' and cluster number. Each dataframe contains a single cluster result.
+#' @returns A list of dataframes with samples in rows and cluster assignment
+#' in columns per multi-omics integration method.
+#' @keywords internal
+Ensemble_Cluster_Data_CCC = function(Data,
+                                    ResClust = NULL){
+  AllClusterRes = list()
+
+  ClusterMethods = names(Data)
+  for(method in ClusterMethods){
+    if(method == "SNF"){
+      ClusterSNFDistance = names(Data$SNF)
+      for(distance in ClusterSNFDistance){
+        ClusterSNFClustnum = names(Data$SNF[[distance]])
+        for(clustnum in ClusterSNFClustnum){
+          SNFClusters = as.integer(strsplit(clustnum, "_")[[1]][2])
+          if(SNFClusters == ResClust){
+            SNFName = paste0(method, "_", distance, "_", SNFClusters)
+            AllClusterRes[[SNFName]] = Data$SNF[[distance]][[clustnum]]
+          }
+        }
+      }
+    }else if(method == "GAUDI"){
+      ClusterGAUDIClustmethod = names(Data$GAUDI)
+      for(clustmethod in ClusterGAUDIClustmethod){
+        ClusterGAUDIClustnum = names(Data$GAUDI[[clustmethod]])
+        for(clustnum in ClusterGAUDIClustnum){
+          GAUDIClusters = as.integer(strsplit(clustnum, "_")[[1]][2])
+          if(GAUDIClusters == ResClust){
+            GAUDIName = paste0(method, "_", clustmethod, "_", GAUDIClusters)
+            AllClusterRes[[GAUDIName]] = Data$GAUDI[[clustmethod]][[clustnum]]
+          }
+        }
+      }
+    }else{
+      ClusterClustnum = names(Data[[method]])
+      for(clustnum in ClusterClustnum){
+        MethodClusters = as.integer(strsplit(clustnum, "_")[[1]][2])
+        if(MethodClusters == ResClust){
+          MethodName = paste0(method, "_", MethodClusters)
+          AllClusterRes[[MethodName]] = Data[[method]][[clustnum]]
+        }
+      }
+    }
+  }
+  return(AllClusterRes)
+}
+
 #Create ensemble clustering from ensemble matrix
 #' Create an ensemble clustering assignment from all available multi-omics
 #' integration results
 #' @description
 #' Using the dataframe with multi-omics integration cluster assignments as
 #' created in `Ensemble_Cluster_Data()`, create a sample similarity matrix by
-#' counting the number of times samples cluster together. Hierarchical
+#' counting the number of times samples cluster together. Code for similarity
+#' matrix is adapted from the MOVICS pacakage. Hierarchical
 #' clustering is then performed on this matrix to provide a more robust
 #' clustering result by combining multiple cluster assignments.
 #' @param MethodClusterResults A list of dataframes with cluster assignments per
@@ -1711,31 +1820,31 @@ Ensemble_Cluster_Data = function(Data){
 #' stored in $ClusterRes. Sample distance matrix, stored in $DistMat.
 #' hierarchical clustering tree, stored in $HClustRes.
 #' @keywords internal
+#' @references Lu X, Meng J, Zhou Y, Jiang L, Yan F. MOVICS: an R package for
+#' multi-omics integration and visualization in cancer subtyping. Bioinformatics.
+#' 2021 Apr 1;36(22-23):5539-5541.
 Ensemble_Cluster_CHC = function(MethodClusterResults,
                                 Sample_IDs,
                                 Distance = "euclidean",
                                 MinkowskiPower = NULL,
                                 Linkage = "ward.D2",
                                 Clusters = NULL){
-  Ens_Clust_Samples = Sample_IDs
-  Ens_Matrix = matrix(0, nrow = length(Ens_Clust_Samples), ncol = length(Ens_Clust_Samples))
-  for(i in 1:length(MethodClusterResults)){
-    Ens_Clust_Result = MethodClusterResults[[i]]
-    Ens_Clust_Group = Ens_Clust_Result$Cluster
-    names(Ens_Clust_Group) = Ens_Clust_Samples
-    Ens_Clust_Ans = matrix(0, nrow = length(Ens_Clust_Samples), ncol = length(Ens_Clust_Samples))
-    rownames(Ens_Clust_Ans) = colnames(Ens_Clust_Ans) = Ens_Clust_Samples
-    Ens_Clust_Unique_Group = unique(Ens_Clust_Group)
-
-    for(j in 1:length(Ens_Clust_Unique_Group)){
-      Ens_Clust_Group_j = names(Ens_Clust_Group)[Ens_Clust_Group == Ens_Clust_Unique_Group[j]]
-      Ens_Clust_Ans[Ens_Clust_Group_j, Ens_Clust_Group_j] = 1
-    }
-    Ens_Matrix = Ens_Matrix + as.matrix(Ens_Clust_Ans)
-  }
-  Ens_Sim_Matrix = Ens_Matrix/length(MethodClusterResults)
+  Ens_Sim_Matrix = Ensemble_CoAssociation_Matrix(MethodClusterResults = MethodClusterResults,
+                                                 Sample_IDs = Sample_IDs)
   Ens_Dissim_Matrix = 1 - Ens_Sim_Matrix
-  Dist_Matrix = stats::dist(Ens_Dissim_Matrix, method = Distance, p = MinkowskiPower)
+  if(Distance == "minkowski"){
+    if(is.null(MinkowskiPower)){
+      Dist_Matrix = stats::dist(Ens_Dissim_Matrix,
+                                method = Distance)
+    }else{
+      Dist_Matrix = stats::dist(Ens_Dissim_Matrix,
+                                method = Distance,
+                                p = MinkowskiPower)
+    }
+  }else{
+    Dist_Matrix = stats::dist(Ens_Dissim_Matrix,
+                              method = Distance)
+  }
   Ens_HClust = fastcluster::hclust(Dist_Matrix, method = Linkage)
   Ens_Clust_Result = stats::cutree(Ens_HClust, k = Clusters)
 
@@ -1754,14 +1863,14 @@ Ensemble_Cluster_CHC = function(MethodClusterResults,
 #' @description
 #' Using the dataframe with multi-omics integration cluster assignments as
 #' created in `Ensemble_Cluster_Data()`, create a sample similarity matrix by
-#' counting the number of times samples cluster together. Classical MDS is
+#' counting the number of times samples cluster together. Code for similarity
+#' matrix is adapted from the MOVICS package. Classical MDS is
 #' applied to this matrix to obtain sample coordinates. Hierarchical
 #' clustering is then performed on this MDS matrix. The MDS dimension is
 #' selected automatically, by using leave-one-method-out stabilities, to favor
 #' the most compact representation which preserves robustness. Stability is
 #' quantified as the Adjusted Rand Index  between the full-ensemble MDS-HC
 #' clustering and each leave-one-method-out MDS-HC clustering.
-#' EnsembleClustering = list()
 #' @param MethodClusterResults A list of dataframes with cluster assignments per
 #' multi-omics integration method.
 #' @param Sample_IDs Vector of sample names.
@@ -1783,13 +1892,16 @@ Ensemble_Cluster_CHC = function(MethodClusterResults,
 #' `"complete"`, `"average"`, `"mcquitty"`, `"median"` or `"centroid"`.
 #' @param Clusters Number of clusters to create from the hierarchical clustering
 #' result. Default is `NULL`.
-#' @returns A list of results. Sample distance matrix, stored in $DistMat.
-#' Consensus matrix, stored in $ConsensusMatrix. Dissimilarity matrix, stored in
-#' $DissimilarityMatrix. MDS final embedding, stored in $Embed. MDS embedding
-#' distance matrix, $EmbedDist. Full final MDS result, provided in $MDS.
-#' Dimension calculation information, provided in $DimensionInfo. Hierarchical
-#' clustering tree, stored in $HClustRes.
+#' @returns A list of results. Sample clustering results, stored in $ClusterRes.
+#' Sample distance matrix, stored in $DistMat. Consensus matrix, stored in
+#' $ConsensusMatrix. Dissimilarity matrix, stored in $DissimilarityMatrix. MDS
+#' final embedding, stored in $Embed. MDS embedding distance matrix, $EmbedDist.
+#' Full final MDS result, provided in $MDS. Dimension calculation information,
+#' provided in $DimensionInfo. Hierarchical clustering tree, stored in $HClustRes.
 #' @keywords internal
+#' @references Lu X, Meng J, Zhou Y, Jiang L, Yan F. MOVICS: an R package for
+#' multi-omics integration and visualization in cancer subtyping. Bioinformatics.
+#' 2021 Apr 1;36(22-23):5539-5541.
 Ensemble_Cluster_MDS_HC = function(MethodClusterResults,
                                    Sample_IDs,
                                    Distance = "euclidean",
@@ -1833,6 +1945,7 @@ Ensemble_Cluster_MDS_HC = function(MethodClusterResults,
     ari = (sum_comb - expected_index) / (max_index - expected_index)
     return(as.numeric(ari))
   }
+
   #extract cluster vector
   GetClusterVector = function(Ens_Clust_Result,
                               Sample_IDs){
@@ -1877,7 +1990,7 @@ Ensemble_Cluster_MDS_HC = function(MethodClusterResults,
     }
 
     if(length(MethodClusterResults) < 1){
-      stop("No clustering methods available after applying DropIndex.")
+      stop("Too few clustering results available to perform stability selection, perform additional multi-omics integration methods to calculate ensemble sample MDS_HC clustering result.")
     }
 
     Ens_Clust_Samples = Sample_IDs
@@ -1926,7 +2039,7 @@ Ensemble_Cluster_MDS_HC = function(MethodClusterResults,
                                Linkage = "ward.D2",
                                Clusters = NULL){
     if(is.null(Clusters)){
-      stop("Clusters must be provided.")
+      stop("Number of Clusters must be provided.")
     }
 
     MDS_Points = as.matrix(MDS_Points)
@@ -1963,12 +2076,8 @@ Ensemble_Cluster_MDS_HC = function(MethodClusterResults,
   Ens_Clust_Samples = Sample_IDs
   N_Samples = length(Ens_Clust_Samples)
 
-  if(N_Samples < 2){
-    stop("At least two samples are required.")
-  }
-
   if(length(MethodClusterResults) < 3){
-    stop("MDS-HC stability selection requires at least three clustering methods.")
+    stop("MDS_HC stability selection requires at least three multi-omics integration methods for sample clustering. Run additional multi-omics integration methods to perform `run_Ensemble_Sample_MDS_HC()`.")
   }
 
   Max_Possible_Dimensions = N_Samples - 1
@@ -1976,7 +2085,7 @@ Ensemble_Cluster_MDS_HC = function(MethodClusterResults,
   CandidateDimensions = CandidateDimensions[CandidateDimensions >= 1 & CandidateDimensions <= Max_Possible_Dimensions]
 
   if(length(CandidateDimensions) == 0){
-    stop("No valid CandidateDimensions available.")
+    stop("No valid CandidateDimensions available. CandidateDimensions must fall between 1 and n Samples - 1.")
   }
 
   Max_Candidate_Dim = max(CandidateDimensions)
@@ -2104,6 +2213,569 @@ Ensemble_Cluster_MDS_HC = function(MethodClusterResults,
   return(EnsembleClustering)
 }
 
+#Create ensemble clustering from ensemble matrix via MDS + k-means
+#' Ensemble clustering by Multidimensional Scaling followed by k-means
+#' @description
+#' RESTORED FROM EINS v7_1 (EINS_Utils_v6.R). v8 replaced this with
+#' `Ensemble_Cluster_MDS_HC()`, which uses `as.dist(1 - consensus)` instead
+#' of the Euclidean distance between rows of the dissimilarity matrix, selects
+#' the embedding dimension by a stability search rather than setting it equal
+#' to the requested cluster count, and clusters the embedding hierarchically
+#' rather than with k-means. This original version is kept so the two can be
+#' compared on identical data.
+#' @param MethodClusterResults A list of dataframes with cluster assignments per
+#' multi-omics integration method.
+#' @param Sample_IDs Vector of sample names.
+#' @param Distance Distance metric to be used for the calculation of the
+#' feature distance matrices. Must be one of: `"euclidean"` (default),
+#' `"maximum"`, `"manhattan"`, `"canberra"`, `"binary"` or `"minkowski"`.
+#' If `"minkowski"` is selected, argument `"MinkowskiPower"` needs to be
+#' included.
+#' @param MinkowskiPower Power of the Minkowski distance. Default NULL.
+#' @param AddConstant Logical, indicating if an additive constant c* should
+#' be computed, and added to the non-diagonal dissimilarities such that the
+#' modified dissimilarities are Euclidean. Passed to `stats::cmdscale(add = )`.
+#' Default TRUE.
+#' @param Clusters Number of clusters. Also used as the MDS dimension, as in v7_1.
+#' @param KmeansNStart Random starting configurations for k-means. v7_1 used R's
+#' default of 1, which made the result non-reproducible; default here is 25.
+#' @param Seed Integer seed set immediately before the k-means call, so the
+#' result is reproducible in isolation rather than depending on the state of
+#' the global random number stream. Default is `NULL`.
+#' @returns A list of results. Sample Clustering results, stored in $ClusterRes.
+#' Sample distance matrix, stored in $DistMat. MDS final embedding, stored in
+#' $Embed.
+#' @keywords internal
+Ensemble_Cluster_MDS = function(MethodClusterResults,
+                                Sample_IDs,
+                                Distance = "euclidean",
+                                MinkowskiPower = NULL,
+                                AddConstant = TRUE,
+                                Clusters = NULL,
+                                KmeansNStart = 25,
+                                Seed = NULL){
+  Ens_Sim_Matrix = Ensemble_CoAssociation_Matrix(MethodClusterResults = MethodClusterResults,
+                                                 Sample_IDs = Sample_IDs)
+  Ens_Dissim_Matrix = 1 - Ens_Sim_Matrix
+  if(Distance == "minkowski"){
+    if(is.null(MinkowskiPower)){
+      Dist_Matrix = stats::dist(Ens_Dissim_Matrix,
+                                method = Distance)
+    }else{
+      Dist_Matrix = stats::dist(Ens_Dissim_Matrix,
+                                method = Distance,
+                                p = MinkowskiPower)
+    }
+  }else{
+    Dist_Matrix = stats::dist(Ens_Dissim_Matrix,
+                              method = Distance)
+  }
+  MDS = stats::cmdscale(d = Dist_Matrix, k = Clusters, add = AddConstant)
+  if(!is.null(Seed)) set.seed(Seed)
+  Ens_Clust_Result = stats::kmeans(x = MDS$points, centers = Clusters, nstart = KmeansNStart)[[1]]
+
+  EnsembleClustering = list()
+  EnsembleClustering$ClusterRes = Ens_Clust_Result
+  EnsembleClustering$DistMat = Dist_Matrix
+  EnsembleClustering$Embed = MDS$points
+
+  return(EnsembleClustering)
+}
+
+#Median partition of the contributing clusterings
+#' Create an ensemble clustering assignment by direct search for the median
+#' partition of the contributing clusterings
+#' @description
+    #' Builds no consensus matrix. Searches instead for the single partition with
+    #' the highest total Adjusted Rand Index against every contributing clustering,
+    #' which is the median partition of the ensemble under that criterion.
+    #' Summarising the contributing clusterings into a co-association matrix
+    #' produced by `Ensemble_CoAssociation_Matrix()`, as `Ensemble_Cluster_CHC()`
+    #' does, discards information; optimising the agreement criterion directly
+    #' does not. The search is a greedy local search over single-sample
+    #' reassignments, started from the `Ensemble_Cluster_CHC()` partition and
+    #' repeated until no move improves the total or `MaxSweeps` is reached. It is
+    #' fully deterministic: the starting partition is deterministic and the sweep
+    #' order is fixed, so no seed is needed.
+#' @param MethodClusterResults A list of dataframes with cluster assignments per
+#' multi-omics integration method, as created by `Ensemble_Cluster_Data()`.
+#' @param Sample_IDs Vector of sample names.
+#' @param Clusters Number of clusters to create.
+#' @param Distance Distance metric used for the starting partition. Must be one
+#' of: `"euclidean"` (default), `"maximum"`, `"manhattan"`, `"canberra"`,
+#' `"binary"` or `"minkowski"`. If `"minkowski"` is selected, argument
+#' `"MinkowskiPower"` needs to be included.
+#' @param MinkowskiPower Power of the Minkowski distance. Default is `NULL`.
+#' @param Linkage Agglomeration method used for the starting partition. Must be
+#' one of: `"ward.D"`, `"ward.D2"` (default), `"single"`, `"complete"`,
+#' `"average"`, `"mcquitty"`, `"median"` or `"centroid"`.
+#' @param MaxSweeps Maximum number of passes over all samples. Default is 2.
+#' @returns A list of results. Sample cluster assignment is stored in $ClusterRes,
+#' the co-association matrix is stored in $ConsensusMatrix, the starting sample
+#' partition is stored in $StartPartition, the achieved total Adjusted Rand Index
+#' is stored in $TotalARI and the number of sweeps performed is stored in $Sweeps.
+#' @keywords internal
+#' @references Vega-Pons S, Ruiz-Shulcloper J. A survey of clustering ensemble
+#' algorithms. International Journal of Pattern Recognition and Artificial
+#' Intelligence. 2011;25(3):337-372.
+Ensemble_Cluster_MPA = function(MethodClusterResults,
+                                Sample_IDs,
+                                Clusters = NULL,
+                                Distance = "euclidean",
+                                MinkowskiPower = NULL,
+                                Linkage = "ward.D2",
+                                MaxSweeps = 2){
+  Ens_Sim_Matrix = Ensemble_CoAssociation_Matrix(MethodClusterResults = MethodClusterResults,
+                                                 Sample_IDs = Sample_IDs)
+  n_samples = nrow(Ens_Sim_Matrix)
+
+  if(Distance == "minkowski"){
+    if(is.null(MinkowskiPower)){
+      Dist_Matrix = stats::dist(1 - Ens_Sim_Matrix,
+                                method = Distance)
+    }else{
+      Dist_Matrix = stats::dist(1 - Ens_Sim_Matrix,
+                                method = Distance,
+                                p = MinkowskiPower)
+    }
+  }else{
+    Dist_Matrix = stats::dist(1 - Ens_Sim_Matrix,
+                              method = Distance)
+  }
+  Start_Partition = stats::cutree(fastcluster::hclust(Dist_Matrix, method = Linkage), k = Clusters)
+
+  Pairs = t(utils::combn(n_samples, 2))
+  Base_Pair_Indicators = vapply(MethodClusterResults, function(d){
+    Label = d$Cluster
+    as.numeric(Label[Pairs[, 1]] == Label[Pairs[, 2]])
+  }, numeric(nrow(Pairs)))
+  if(is.null(dim(Base_Pair_Indicators))){
+    Base_Pair_Indicators = matrix(Base_Pair_Indicators, ncol = 1)
+  }
+  Base_Pair_Counts = colSums(Base_Pair_Indicators)
+  Total_Pairs = n_samples * (n_samples - 1) / 2
+
+  Total_ARI = function(Partition){
+    Cand = as.numeric(Partition[Pairs[, 1]] == Partition[Pairs[, 2]])
+    Cand_Pairs = sum(Cand)
+    Both = as.vector(crossprod(Base_Pair_Indicators, Cand))
+    Expected = Cand_Pairs * Base_Pair_Counts / Total_Pairs
+    Maximum = (Cand_Pairs + Base_Pair_Counts) / 2
+    Index = (Both - Expected) / (Maximum - Expected)
+    #0/0 arises when both partitions are trivial in the same way; they then agree
+    #perfectly, so the index is 1 rather than NaN.
+    Degenerate = (Maximum - Expected) == 0
+    if(any(Degenerate)){
+      Index[Degenerate] = ifelse(Both[Degenerate] == Cand_Pairs &
+                                   Both[Degenerate] == Base_Pair_Counts[Degenerate], 1, 0)
+    }
+    sum(Index)
+  }
+
+  Partition = Start_Partition
+  Best_Total = Total_ARI(Partition)
+  Sweeps_Done = 0L
+  for(sweep in seq_len(MaxSweeps)){
+    Sweeps_Done = sweep
+    Improved = FALSE
+    for(i in seq_len(n_samples)){
+      for(g in setdiff(seq_len(Clusters), Partition[i])){
+        Candidate = Partition
+        Candidate[i] = g
+        if(length(unique(Candidate)) != Clusters) next
+        Candidate_Total = Total_ARI(Candidate)
+        if(Candidate_Total > Best_Total + 1e-12){
+          Partition = Candidate
+          Best_Total = Candidate_Total
+          Improved = TRUE
+        }
+      }
+    }
+    if(!Improved) break
+  }
+  names(Partition) = Sample_IDs
+
+  EnsembleClustering = list()
+  EnsembleClustering$ClusterRes = Partition
+  EnsembleClustering$ConsensusMatrix = Ens_Sim_Matrix
+  EnsembleClustering$StartPartition = Start_Partition
+  EnsembleClustering$TotalARI = Best_Total
+  EnsembleClustering$Sweeps = Sweeps_Done
+
+  return(EnsembleClustering)
+}
+
+#Collect the per-method sample representations used by the embedding ensembles
+#' Collect the sample representation of every multi-omics integration method
+#' @description
+#' Assembles the list of per-method sample representations that
+#' `run_Ensemble_Sample_CCA()`, `run_Ensemble_Sample_CAT()`,
+#' `run_Ensemble_Sample_CAT_UMAP()` and `run_Ensemble_Sample_CCA_UMAP()` all
+#' operate on, so that every one of them consumes an identical starting point
+#' rather than rebuilding it. Methods that produce a latent embedding contribute
+#' that embedding; COCA and SNF produce no embedding, so their cluster assignment
+#' is one-hot encoded instead. Every representation is reordered to `Samples`, so
+#' the rows of all of them correspond.
+#' @param Samples Vector of sample names, defining the row order of every
+#' returned matrix.
+#' @param CoordData The `$Multi_Omics$CoordData` list from the main EINS R6 object.
+#' Contains sample coordinate data in reduced dimensions.
+#' @param Fit The `$Multi_Omics$Fit` list from the main EINS R6 object. Contains
+#' all information regarding multi-omics integration method fitting.
+#' @param ClusterRes The `$Multi_Omics$ClusterRes` list from the main EINS R6
+#' object. Contains the clustering assignments for all multi-omics integration
+#' methods.
+#' @param Factors Number of latent factors or components the embeddings were
+#' created with.
+#' @param SNFDistance Which distance used to calculate SNF results to be
+#' included in the ensemble clustering. This is needed to reduce the impact
+#' of SNF on the ensemble clustering assignment. Must be one of:
+#' `"euclidean squared"` (default), `"euclidean"`, `"manhattan"`,
+#' `"minkowksi 0.25"`, `"minkowski 0.5"`, `"minkowski 3"` or `"minkowski 4"`.
+#' @param GAUDIMethod Which clustering method is used to calculate GAUDI
+#' results to be included in the ensemble clustering. This is needed to
+#' reduce the impact of GAUDI on the ensemble clustering assignment. Must be
+#' one of: `"Kmeans"` (default), `"HDBSCAN"` or `"DBSCAN"`.
+#' @param Warn Logical, whether to warn for each method with no representation
+#' available. Default is `TRUE`.
+#' @returns A named list of matrices, consisting of the embedding per multi-omics
+#' integration method. Samples are stored in rows, factors in columns.
+#' @keywords internal
+Ensemble_Embedding_List = function(Samples,
+                                   CoordData,
+                                   Fit,
+                                   ClusterRes,
+                                   Factors,
+                                   SNFDistance = "euclidean squared",
+                                   GAUDIMethod = "Kmeans",
+                                   Warn = TRUE){
+  FactorNum = paste0("Factors_", Factors)
+  ClustNum = paste0("Clusters_", Factors)
+  EmbedList = list()
+
+  #methods with a stored latent embedding
+  Coord_Methods = names(CoordData)
+  for(method in Coord_Methods){
+    if(method == "GAUDI"){
+      Embed = CoordData[[method]][[GAUDIMethod]][[FactorNum]]
+    }else{
+      Embed = CoordData[[method]][[FactorNum]]
+    }
+    if(!is.null(Embed)){
+      Embed = Embed[match(Samples, rownames(Embed)), , drop = FALSE]
+      colnames(Embed) = paste0(method, "_Factor_", 1:ncol(Embed))
+      EmbedList[[method]] = as.matrix(Embed)
+    }else if(Warn){
+      warning(paste0("No embedding from ", method, " with ", Factors, " factors available, rerun ", method, " to include this method"))
+    }
+  }
+
+  #jNMF and iNMF keep their sample loadings in the fit rather than in CoordData
+  NMFMethod = c("jNMF", "iNMF")
+  for(method in NMFMethod){
+    FitW = Fit[[method]][[ClustNum]]$W
+    if(!is.null(dim(FitW))){
+      FitW = FitW[match(Samples, rownames(FitW)), , drop = FALSE]
+      colnames(FitW) = paste0(method, "_Factor_", 1:ncol(FitW))
+      EmbedList[[method]] = as.matrix(FitW)
+    }else if(Warn){
+      warning(paste0("No embedding from ", method, " with ", Factors, " factors available, rerun ", method, " to include this method"))
+    }
+  }
+
+  #COCA and SNF have no embedding, so the cluster assignment is one-hot encoded
+  OneHotMethod = c("COCA", "SNF")
+  for(method in OneHotMethod){
+    if(method == "SNF"){
+      MethodClustRes = ClusterRes[[method]][[SNFDistance]][[ClustNum]]
+    }else{
+      MethodClustRes = ClusterRes[[method]][[ClustNum]]
+    }
+    if(!is.null(MethodClustRes)){
+      MethodClustRes = MethodClustRes[match(Samples, rownames(MethodClustRes)), , drop = FALSE]
+      ClusterLabel = as.numeric(MethodClustRes$Cluster)
+
+      n_samples = length(ClusterLabel)
+      #The width must be the number of CLUSTERS, not the number of latent
+      #factors. Using Factors made every sample in cluster 10 or above an
+      #all-zero row (encoded as belonging to no cluster) whenever
+      #Clusters > Factors, and left (Factors - Clusters) empty columns when
+      #Clusters < Factors. Fixed in v81.
+      n_clusters = max(ClusterLabel, na.rm = TRUE)
+      OneHot = matrix(0, nrow = n_samples, ncol = n_clusters)
+      for(i in 1:n_samples){
+        if(!is.na(ClusterLabel[i])){
+          OneHot[i, ClusterLabel[i]] = 1
+        }
+      }
+      rownames(OneHot) = Samples
+      colnames(OneHot) = paste0(method, "_Cluster_", 1:n_clusters)
+      EmbedList[[method]] = as.matrix(OneHot)
+    }else if(Warn){
+      warning(paste0("No embedding from ", method, " with ", Factors, " factors available, rerun ", method, " to include this method"))
+    }
+  }
+
+  return(EmbedList)
+}
+
+
+#Canonical correlation alignment of the per-method representations
+#' Align the per-method sample representations by canonical correlation
+#' @description
+#' Puts every representation into a common space by aligning it to one chosen
+#' reference method through canonical correlation analysis, then concatenates the
+#' aligned matrices. Without this the representations cannot be concatenated
+#' meaningfully, because each method places its own axes arbitrarily.
+#' A representation that cannot be aligned is carried through unaligned: the
+#' one-hot encodings of COCA and SNF are rank deficient, so `stats::cancor()`
+#' returns a coefficient matrix with fewer rows than columns requested and the
+#' multiplication fails. That fallback is deliberate and matches the published
+#' behaviour of the method.
+#' @param EmbedList A named list of per-method embeddings, as created by
+#' `Ensemble_Embedding_List()`.
+#' @param Reference Name of the method in `EmbedList` to align the others to.
+#' @param Samples Vector of sample names, used for the row names of the result.
+#' @returns A matrix of the concatenated aligned representations, samples in rows,
+#' CCA factor embedding in columns..
+#' @keywords internal
+Ensemble_Align_CCA = function(EmbedList,
+                              Reference,
+                              Samples){
+  if(Reference %in% names(EmbedList)){
+    ref_id = which(names(EmbedList) == Reference)
+    EmbedList = c(EmbedList[ref_id], EmbedList[-ref_id])
+  }else{
+    stop(paste0("No ", Reference, " embeddings available, run ", Reference, " or change Reference variable"))
+  }
+
+  Ref = as.matrix(EmbedList[[1]])
+  n_samples = nrow(Ref)
+
+  Aligned = list()
+  Aligned[[1]] = Ref
+
+  for(i in 2:length(EmbedList)){
+    CurrentEmbed = as.matrix(EmbedList[[i]])
+    if(nrow(CurrentEmbed) != n_samples){
+      Aligned[[i]] = CurrentEmbed
+      next
+    }
+
+    tryCatch({
+      n_CCA = min(ncol(Ref), ncol(CurrentEmbed), n_samples - 1)
+
+      CCARes = stats::cancor(x = as.matrix(Ref[, 1:n_CCA, drop = FALSE]),
+                             y = as.matrix(CurrentEmbed[, 1:n_CCA, drop = FALSE]))
+
+      if(!is.null(CCARes$ycoef) && is.matrix(CCARes$ycoef)){
+        n_Canon = min(ncol(CCARes$ycoef), n_CCA)
+        AlignedCurr = as.matrix(CurrentEmbed[, 1:n_CCA, drop = FALSE]) %*%
+          as.matrix(CCARes$ycoef[, 1:n_Canon, drop = FALSE])
+        Aligned[[i]] = AlignedCurr
+      }else{
+        Aligned[[i]] = CurrentEmbed
+      }
+    }, error = function(e) {
+      Aligned[[i]] <<- CurrentEmbed
+    })
+  }
+
+  Aligned_Embed = do.call(cbind, Aligned)
+  rownames(Aligned_Embed) = Samples
+  colnames(Aligned_Embed) = paste0("CCA_", 1:ncol(Aligned_Embed))
+
+  return(Aligned_Embed)
+}
+
+
+#Standardise and concatenate the per-method representations
+#' Standardise and concatenate the per-method sample representations
+#' @description
+#' Concatenates the per-method representations after standardising each column
+#' to zero mean and unit variance, with no alignment step. Standardising is
+#' what makes the concatenation meaningful without alignment: methods produce
+#' embeddings on very different scales, and an unstandardised concatenation
+#' would be dominated by whichever method happens to have the largest variance.
+#' This is the control for `Ensemble_Align_CCA()`: the difference between the
+#' two isolates what the canonical correlation alignment contributes, since
+#' they differ in nothing else. Columns that are constant, and therefore not
+#' finite after standardising, are dropped rather than allowed to propagate
+#' NaN into the clustering.
+#' @param EmbedList A named list of per-method representations, as created by
+#' `Ensemble_Embedding_List()`.
+#' @param Samples Vector of sample names, used for the row names of the result.
+#' @returns A matrix of the concatenated standardised representations, samples in
+#' rows.
+#' @keywords internal
+Ensemble_Concat_Embeddings = function(EmbedList,
+                                      Samples){
+  Standardise = function(M){
+    M = scale(as.matrix(M))
+    Finite_Cols = apply(M, 2, function(column) all(is.finite(column)))
+    M[, Finite_Cols, drop = FALSE]
+  }
+  Concat_Embed = do.call(cbind, lapply(EmbedList, Standardise))
+  rownames(Concat_Embed) = Samples
+  colnames(Concat_Embed) = paste0("CAT_", 1:ncol(Concat_Embed))
+  return(Concat_Embed)
+}
+
+
+#Non-linear reduction of a concatenated representation, then k-means
+#' Reduce a sample representation with UMAP and cluster the result
+#' @description
+    #' Applies Uniform Manifold Approximation and Projection to a sample
+    #' representation and clusters the reduced coordinates with k-means. Every
+    #' other ensemble method in this package combines its inputs linearly - by
+    #' averaging co-association counts, by classical multidimensional scaling,
+    #' or by canonical correlation - so none of them can recover structure that
+    #' is not linearly separable. UMAP can, which is why it is offered as an
+    #' alternative reduction step rather than as a replacement for the clustering.
+#' @param Embed Matrix of sample coordinates as created by
+#' `Ensemble_Concat_Embeddings()`, samples in rows.
+#' @param Clusters Number of clusters to create.
+#' @param Samples Vector of sample names.
+#' @param UMAPNeighbors Size of the local neighborhood used for manifold
+#' approximation. Default is 15, reduced automatically if the sample count is too
+#' small to support it.
+#' @param UMAPDimensions Number of dimensions to reduce to. Default is `NULL`,
+#' which uses `Clusters` dimensions, bounded below by 2 and above by the number
+#' of available columns.
+#' @param UMAPMinDist Effective minimum distance between embedded points. Default
+#' is 0.1.
+#' @param KmeansNStart Number of random starting configurations for k-means.
+#' Default is 25.
+#' @param Seed Integer seed set before both the UMAP and the k-means call, so the
+#' result is reproducible in isolation. UMAP is stochastic through its stochastic
+#' gradient descent, so without this the result depends on the state of the
+#' global random number stream. Default is `NULL`, which does not set a seed.
+#' @returns A list of results. Cluster assignment in $ClusterRes and the UMAP
+#' coordinates in $Embed. Returns `NULL` if UMAP fails, which is possible when the
+#' sample count is very small.
+#' @keywords internal
+#' @references McInnes L, Healy J, Melville J. UMAP: Uniform Manifold
+#' Approximation and Projection for Dimension Reduction. arXiv:1802.03426. 2018.
+Ensemble_Cluster_UMAP = function(Embed,
+                                 Clusters,
+                                 Samples,
+                                 UMAPNeighbors = 15,
+                                 UMAPDimensions = NULL,
+                                 UMAPMinDist = 0.1,
+                                 KmeansNStart = 25,
+                                 Seed = NULL){
+  Embed = as.matrix(Embed)
+  n_samples = nrow(Embed)
+  Neighbors = min(UMAPNeighbors, n_samples - 1)
+  if(is.null(UMAPDimensions)){
+    UMAPDimensions = max(2, min(Clusters, ncol(Embed)))
+  }
+
+  if(!is.null(Seed)) set.seed(Seed)
+  UMAP_Embed = try(uwot::umap(Embed,
+                              n_neighbors = Neighbors,
+                              n_components = UMAPDimensions,
+                              min_dist = UMAPMinDist,
+                              verbose = FALSE,
+                              n_threads = 1,
+                              n_sgd_threads = 1),
+                   silent = TRUE)
+  if(inherits(UMAP_Embed, "try-error")){
+    warning(paste0("UMAP failed with ", n_samples, " samples and ", Clusters, " clusters, no result stored"))
+    return(NULL)
+  }
+
+  UMAP_Embed = as.matrix(UMAP_Embed)
+  rownames(UMAP_Embed) = Samples
+  colnames(UMAP_Embed) = paste0("UMAP_", 1:ncol(UMAP_Embed))
+
+  if(!is.null(Seed)) set.seed(Seed)
+  UMAP_Clust = stats::kmeans(UMAP_Embed, centers = Clusters, nstart = KmeansNStart)$cluster
+  names(UMAP_Clust) = Samples
+
+  EnsembleClustering = list()
+  EnsembleClustering$ClusterRes = UMAP_Clust
+  EnsembleClustering$Embed = UMAP_Embed
+
+  return(EnsembleClustering)
+}
+
+
+#Sample names in the order every ensemble method uses
+#' Sample names in the order used by the ensemble methods
+#' @description
+#' Returns the sample names taken from the most processed data available,
+#' falling back through matched, preprocessed, sample and raw data in that
+#' order. Every ensemble method resolves its sample order the same way through
+#' this function, so their results are row-comparable by construction rather
+#' than by coincidence.
+#' @param Preprocessed_Omics The `$Preprocessed_Omics` list, which contains the
+#' individual omics datasets after preprocessing has been performed.
+#' @param Omics The `$Omics` list, which contains the unaltered input omics
+#' datasets.
+#' @returns A character vector of sample names, ordered as in the first input
+#' omics file.
+#' @keywords internal
+Ensemble_Sample_Names = function(Preprocessed_Omics,
+                                 Omics){
+  if(!is.null(Preprocessed_Omics$Matched_Data)){
+    Data = Preprocessed_Omics$Matched_Data
+  } else if(!is.null(Preprocessed_Omics$Data)){
+    Data = Preprocessed_Omics$Data
+  } else if(!is.null(Omics$Sample_Data)){
+    Data = Omics$Sample_Data
+  }else{
+    Data = Omics$Raw_Data
+  }
+  return(colnames(Data[[1]]))
+}
+
+
+#Select the contributing base clusterings for the ensemble methods
+#' Select the multi-omics cluster assignments that contribute to an ensemble
+#' @description
+#' Collects the cluster assignments of every multi-omics integration method,
+#' keeping only one of the SNF distances and one of the GAUDI clustering
+#' algorithms. SNF can be run at several distances, so including all of them
+#' would let SNF cast several times as many votes as any other method and
+#' dominate the consensus. GAUDI can be run with several clustering
+#' algorithms, so including all of them would let GAUDI cast several
+#' times as many votes as any other method, and dominate consensus. For
+#' @param ClusterRes The `$Multi_Omics$ClusterRes` list. Contains the cluster
+#' assignments for all multi-omics integration methods.
+#' @param SNFDistance Which distance used to calculate SNF results to be
+#' included. Must be one of: `"euclidean squared"` (default), `"euclidean"`,
+#' `"manhattan"`, `"minkowksi 0.25"`, `"minkowski 0.5"`, `"minkowski 3"` or
+#' `"minkowski 4"`.
+#' @param GAUDIMethod Which GAUDI clustering method to take results from.
+#' Default is `"Kmeans"`.
+#' @returns A list of cluster assignments per method, ready for
+#' `Ensemble_Cluster_Data()`.
+#' @keywords internal
+Ensemble_Base_Clusterings = function(ClusterRes,
+                                     SNFDistance = "euclidean squared",
+                                     GAUDIMethod = "Kmeans"){
+  ClusterResults = list()
+  for(method in names(ClusterRes)){
+    if(method == "SNF"){
+      for(distance in names(ClusterRes$SNF)){
+        if(distance == SNFDistance){
+          ClusterResults$SNF[[distance]] = ClusterRes$SNF[[distance]]
+        }
+      }
+    }else if(method == "GAUDI"){
+      for(clustmeth in names(ClusterRes$GAUDI)){
+        if(clustmeth == GAUDIMethod){
+          ClusterResults$GAUDI[[clustmeth]] = ClusterRes$GAUDI[[clustmeth]]
+        }
+      }
+    }else{
+      ClusterResults[[method]] = ClusterRes[[method]]
+    }
+  }
+  return(ClusterResults)
+}
+
 #Hierarchical clustering of scaled factor feature weights using average distance per integration method
 #' Ensemble feature clustering using average feature distance between
 #' integration methods
@@ -2173,9 +2845,19 @@ Feature_Method_Av_HClust = function(ScaledFeaturesData,
     Data = MethodFeatWeight[[method]]
     tData = t(Data)
     #dist creates distance matrix for rows
-    DistList[[method]] = stats::dist(tData,
-                                     method = Distance,
-                                     p = MinkowskiPower)
+    if(Distance == "minkowski"){
+      if(is.null(MinkowskiPower)){
+        DistList[[method]] = stats::dist(tData,
+                                         method = Distance)
+      }else{
+        DistList[[method]] = stats::dist(tData,
+                                         method = Distance,
+                                         p = MinkowskiPower)
+      }
+    }else{
+      DistList[[method]] = stats::dist(tData,
+                                       method = Distance)
+    }
   }
 
   #Average of individual method weigths
@@ -2293,12 +2975,26 @@ Feature_Concat_HClust = function(FullFeatureData,
   Data = FullFeatureData
   tData = t(Data)
   #dist creates distance matrix for rows
-  FeatDist = stats::dist(tData,
-                         method = Distance,
-                         p = MinkowskiPower)
-  FactDist = stats::dist(Data,
-                         method = Distance,
-                         p = MinkowskiPower)
+  if(Distance == "minkowski"){
+    if(is.null(MinkowskiPower)){
+      FeatDist = stats::dist(tData,
+                             method = Distance)
+      FactDist = stats::dist(Data,
+                             method = Distance)
+    }else{
+      FeatDist = stats::dist(tData,
+                             method = Distance,
+                             p = MinkowskiPower)
+      FactDist = stats::dist(Data,
+                             method = Distance,
+                             p = MinkowskiPower)
+    }
+  }else{
+    FeatDist = stats::dist(tData,
+                           method = Distance)
+    FactDist = stats::dist(Data,
+                           method = Distance)
+  }
 
   #hclust
   FeatHClust = fastcluster::hclust(d = FeatDist,
@@ -2812,8 +3508,7 @@ MultiOmicsHeatmapClustered = function(OmicsData,
     )
   }
   MultiOmicsHeatmapAnno = Reduce(ComplexHeatmap::"%v%", OmicsHeatmaps)
-  MultiOmicsItems = list(Heatmap = MultiOmicsHeatmapAnno, Annotation = HeatmapAnno)
-  return(MultiOmicsItems)
+  return(MultiOmicsHeatmapAnno)
 }
 
 #interactive scatterplot
@@ -3127,10 +3822,22 @@ Data_Manipulation_Sankey_Methods = function(ClusterResData,
       }
     } else if(grepl("EnsembleCHC", Sankey_clustname_i)){
       Sankey_methabbr_i = "CHC"
-    } else if(grepl("EnsembleMDS", Sankey_clustname_i)){
+    } else if(grepl("EnsembleCCC", Sankey_clustname_i)){
+      Sankey_methabbr_i = "CCC"
+    } else if(grepl("EnsembleMDS_HC", Sankey_clustname_i)){
       Sankey_methabbr_i = "MDS_HC"
+    } else if(grepl("EnsembleMDS_km", Sankey_clustname_i)){
+      Sankey_methabbr_i = "MDS_km"
+    } else if(grepl("EnsembleMPA", Sankey_clustname_i)){
+      Sankey_methabbr_i = "MPA"
     } else if(grepl("EnsembleCCA", Sankey_clustname_i)){
       Sankey_methabbr_i = "CCA"
+    } else if(grepl("EnsembleCAT", Sankey_clustname_i)){
+      Sankey_methabbr_i = "CAT"
+    } else if(grepl("EnsembleUMAPCCA", Sankey_clustname_i)){
+      Sankey_methabbr_i = "CCA_UMAP"
+    } else if(grepl("EnsembleUMAPCAT", Sankey_clustname_i)){
+      Sankey_methabbr_i = "CAT_UMAP"
     }
     if(grepl("MoCluster", Sankey_clustname_j)){
       Sankey_methabbr_j = "MoCl"
@@ -3172,10 +3879,22 @@ Data_Manipulation_Sankey_Methods = function(ClusterResData,
       }
     } else if(grepl("EnsembleCHC", Sankey_clustname_j)){
       Sankey_methabbr_j = "CHC"
-    } else if(grepl("EnsembleMDS", Sankey_clustname_j)){
+    } else if(grepl("EnsembleCCC", Sankey_clustname_j)){
+      Sankey_methabbr_j = "CCC"
+    } else if(grepl("EnsembleMDS_HC", Sankey_clustname_j)){
       Sankey_methabbr_j = "MDS_HC"
+    } else if(grepl("EnsembleMDS_km", Sankey_clustname_j)){
+      Sankey_methabbr_j = "MDS_km"
+    } else if(grepl("EnsembleMPA", Sankey_clustname_j)){
+      Sankey_methabbr_j = "MPA"
     } else if(grepl("EnsembleCCA", Sankey_clustname_j)){
       Sankey_methabbr_j = "CCA"
+    } else if(grepl("EnsembleCAT", Sankey_clustname_j)){
+      Sankey_methabbr_j = "CAT"
+    } else if(grepl("EnsembleUMAPCCA", Sankey_clustname_j)){
+      Sankey_methabbr_j = "CCA_UMAP"
+    } else if(grepl("EnsembleUMAPCAT", Sankey_clustname_j)){
+      Sankey_methabbr_j = "CAT_UMAP"
     }
     #create a name to identify each source-target dataframe by methods
     Sankey_name = paste0(Sankey_methabbr_i, "_", Sankey_methabbr_j)
@@ -3408,5 +4127,102 @@ Dendrogram_Omics_Bar = function(HClust,
   return(Omics_Bar)
 }
 
+#----------------EINS R6 Merge----------------
+#' Merge data from one EINS R6 object into another EINS R6 object
+#' @description
+#' Merge the data from one EINS R6 object with data from another EINS R6 object.
+#' Can be used if different preprocessing is wanted for separate multi-omics
+#' integration methods, or when performing computations in parallel. Preprocessed
+#' omics, single omics clustering, multi-omics integration or ensemble integration
+#' results can all be merged. If data is present in both EINS R6 objects, data in
+#' the reference EINS R6 object will be overwritten with data from the
+#' supplemental EINS R6 object.
+#' @param Ref_EINS  Reference EINS R6 object, from which all data will be taken.
+#' @param Supp_EINS Supplemental EINS R6 object, from which only specified data
+#' will be taken, overwriting data in the reference EINS R6 object.
+#' @param Omics List of omics names. For each omics type provided in the list,
+#' the preprocessed matrices will be stored in the new EINS R6 object. If the
+#' reference EINS R6 contains preprocessed omics matrices for the specified omics,
+#' these will be overwritten.
+#' @param Single_Omics List of omics names. For each omics type provided in the
+#' list, the single omics clustering results will be stored in the new EINS R6
+#' object. If the reference EINS R6 contains single omics clustering results for
+#' the specified omics, these will be overwritten.
+#' @param Multi_Omics List of multi-omics integration methods. For each multi-omics
+#' integration method provided in the list, the integration results will be
+#' stored in the new EINS R6 object. If the reference EINS R6 contains multi-omics
+#' integration results for the specified methods, these will be overwritten.
+#' @param Ensemble List of ensemble integration methods. For each ensemble
+#' integration method provided in the list, the ensemble integration results will
+#' be stored in the new EINS R6 object. If the reference EINS R6 contains ensemble
+#' integration results for the specified methods, these will be overwritten.
+#' @returns An EINS R6 object. Contains the data from the reference EINS R6 object,
+#' except for the supplied omics and methods, which are taken from the supplemental
+#' EINS R6 object.
+EINS_Merge = function(Ref_EINS = NULL,
+                      Supp_EINS = NULL,
+                      Omics = NA,
+                      Single_Omics = NA,
+                      Multi_Omics = NA,
+                      Ensemble = NA
+){
+  EINS_3 = Ensemble_Integration_Suite$new()
+  EINS_3$Omics = Ref_EINS$Omics
+  EINS_3$Data_Checks = Ref_EINS$Data_Checks
+  EINS_3$Preprocessed_Omics = Ref_EINS$Preprocessed_Omics
+  EINS_3$Single_Omics = Ref_EINS$Single_Omics
+  EINS_3$Multi_Omics = Ref_EINS$Multi_Omics
+  EINS_3$Ensemble = Ref_EINS$Ensemble
+
+  for(Omic in Omics){
+    if(is.na(Omics)){
+      next
+    }else{
+      EINS_3$Preprocessed_Omics$Data[[Omic]] = Supp_EINS$Preprocessed_Omics$Data[[Omic]]
+      EINS_3$Preprocessed_Omics$Matched_Data[[Omic]] = Supp_EINS$Preprocessed_Omics$Matched_Data[[Omic]]
+      EINS_3$Preprocessed_Omics$Non_Neg_Data[[Omic]] = Supp_EINS$Preprocessed_Omics$Non_Neg_Data[[Omic]]
+      EINS_3$Preprocessed_Omics$Correlated_Features[[Omic]] = Supp_EINS$Preprocessed_Omics$Correlated_Features[[Omic]]
+    }
+  }
+
+  for(Omic in Single_Omics){
+    if(is.na(Omic)){
+      next
+    }else{
+      EINS_3$Single_Omics$Fit[[Omic]] = Supp_EINS$Single_Omics$Fit[[Omic]]
+      EINS_3$Single_Omics$ClusterRes[[Omic]] = Supp_EINS$Single_Omics$ClusterRes[[Omic]]
+      EINS_3$Single_Omics$HClustTree[[Omic]] = Supp_EINS$Single_Omics$HClustTree[[Omic]]
+      EINS_3$Single_Omics$DistanceMatrix[[Omic]] = Supp_EINS$Single_Omics$DistanceMatrix[[Omic]]
+    }
+  }
+
+  for(MO in Multi_Omics){
+    if(is.na(MO)){
+      next
+    }else{
+      EINS_3$Multi_Omics$Fit[[MO]] = Supp_EINS$Multi_Omics$Fit[[MO]]
+      EINS_3$Multi_Omics$ClusterRes[[MO]] = Supp_EINS$Multi_Omics$ClusterRes[[MO]]
+      EINS_3$Multi_Omics$FeatureRes[[MO]] = Supp_EINS$Multi_Omics$FeatureRes[[MO]]
+      EINS_3$Multi_Omics$FactorRes[[MO]] = Supp_EINS$Multi_Omics$FactorRes[[MO]]
+      EINS_3$Multi_Omics$VarianceExp[[MO]] = Supp_EINS$Multi_Omics$VarianceExp[[MO]]
+      EINS_3$Multi_Omics$CoordData[[MO]] = Supp_EINS$Multi_Omics$CoordData[[MO]]
+      EINS_3$Multi_Omics$Feature_HClust$DistanceMatrix[[MO]] = Supp_EINS$Multi_Omics$Feature_HClust$DistanceMatrix[[MO]]
+      EINS_3$Multi_Omics$Feature_HClust$HClustTree[[MO]] = Supp_EINS$Multi_Omics$Feature_HClust$HClustTree[[MO]]
+    }
+  }
+
+  for(ENS in Ensemble){
+    if(is.na(ENS)){
+      next
+    }else{
+      EINS_3$Ensemble$Samples[[ENS]] = Supp_EINS$Ensemble$Samples[[ENS]]
+      EINS_3$Ensemble[[ENS]] = Supp_EINS$Ensemble[[ENS]]
+    }
+  }
+  return(EINS_3)
+}
 
 #----------------END----------------
+
+
+
