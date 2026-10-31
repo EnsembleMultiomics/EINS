@@ -11,6 +11,11 @@ A package to create an R6 object in which multi-omics integration can be perform
 \author{
 \strong{Maintainer}: Mara Zuiderwijk \email{m.o.zuiderwijk@lumc.nl}
 
+Authors:
+\itemize{
+  \item Mara Zuiderwijk \email{m.o.zuiderwijk@lumc.nl}
+}
+
 Other contributors:
 \itemize{
   \item Damien Olivier [contributor]
