@@ -325,10 +325,6 @@ Ensemble_Integration_Suite <- R6::R6Class(
                                           BatchColumnName = BatchColumnName,
                                           XAxis = BatchPCAXAxis,
                                           YAxis = BatchPCAYAxis,
-                                          Width = 5,
-                                          Height = 5,
-                                          YFontSize = 15,
-                                          XFontSize = 15,
                                           Title = PCA_Pre_Title)
             self$Plots$Batch_PCA$Pre_Correction[[OmicsName]] = PCA_Pre_Plot
           }
@@ -344,10 +340,6 @@ Ensemble_Integration_Suite <- R6::R6Class(
                                          BatchColumnName = BatchColumnName,
                                          XAxis = BatchPCAXAxis,
                                          YAxis = BatchPCAYAxis,
-                                         Width = 5,
-                                         Height = 5,
-                                         YFontSize = 15,
-                                         XFontSize = 15,
                                          Title = PCA_Post_Title)
           self$Plots$Batch_PCA$Post_Correction[[OmicsName]] = PCA_Post_Plot
         }else if(Func == "FilterCorrelation"){
@@ -2164,7 +2156,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' matrix is stored in $Ensemble$Samples$MDS_HC$ConsensusMatrix by cluster
     #' number. Sample dissimilarity matrix is stored in
     #' $Ensemble$Samples$MDS_HC$DissimilarityMatrix by cluster number. MDS
-    #' embedding is stored in $Ensemble$Samples$MDS_HC$Embed by cluster number.
+    #' embedding is stored in $Ensemble$Samples$MDS_HC$Embedding by cluster number.
     #' MDS embedding distance matrix is stored in
     #' $Ensemble$Samples$MDS_HC$EmbedDistanceMatrix by cluster number. Full MDS
     #' fit is stored in $Ensemble$Samples$MDS_HC$MDS by cluster number. MDS
@@ -2243,7 +2235,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
         }
 
         if(is.null(self$Ensemble$Samples$MDS_HC$Embed)){
-          self$Ensemble$Samples$MDS_HC$Embed = list()
+          self$Ensemble$Samples$MDS_HC$Embedding = list()
         }
 
         if(is.null(self$Ensemble$Samples$MDS_HC$EmbedDistanceMatrix)){
@@ -2270,7 +2262,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
         self$Ensemble$Samples$MDS_HC$DistanceMatrix[[EnsembleClustnum]] = Ensemble_Clustering$DistMat
         self$Ensemble$Samples$MDS_HC$ConsensusMatrix[[EnsembleClustnum]] = Ensemble_Clustering$ConsensusMatrix
         self$Ensemble$Samples$MDS_HC$DissimilarityMatrix[[EnsembleClustnum]] = Ensemble_Clustering$DissimilarityMatrix
-        self$Ensemble$Samples$MDS_HC$Embed[[EnsembleClustnum]] = Ensemble_Clustering$Embed
+        self$Ensemble$Samples$MDS_HC$Embedding[[EnsembleClustnum]] = Ensemble_Clustering$Embed
         self$Ensemble$Samples$MDS_HC$EmbedDistanceMatrix[[EnsembleClustnum]] = Ensemble_Clustering$EmbedDist
         self$Ensemble$Samples$MDS_HC$MDS[[EnsembleClustnum]] = Ensemble_Clustering$MDS
         self$Ensemble$Samples$MDS_HC$DimensionInfo[[EnsembleClustnum]] = Ensemble_Clustering$DimensionInfo
@@ -2316,7 +2308,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' not reproducible and frequently misses the tightest solution. Default is 25.
     #' @returns Cluster assignment in $Ensemble$Samples$MDS_km$ClusterRes by
     #' cluster number, dissimilarity in $MDS_km$DistanceMatrix, MDS coordinates
-    #' in $MDS_km$Embed.
+    #' in $MDS_km$Embedding
     run_Ensemble_Sample_MDS_km = function(Clusters = NULL,
                                           Seed = NULL,
                                           SNFDistance = "euclidean squared",
@@ -2358,7 +2350,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
       EnsembleClustnum = paste0("Clusters_", Clusters)
       self$Ensemble$Samples$MDS_km$ClusterRes[[EnsembleClustnum]] = ClusterRes
       self$Ensemble$Samples$MDS_km$DistanceMatrix[[EnsembleClustnum]] = Ensemble_Clustering$DistMat
-      self$Ensemble$Samples$MDS_km$Embed[[EnsembleClustnum]] = Ensemble_Clustering$Embed
+      self$Ensemble$Samples$MDS_km$Embedding[[EnsembleClustnum]] = Ensemble_Clustering$Embed
     },
 
     #Ensemble sample clustering by Median PArtition search (MPA)
@@ -2460,7 +2452,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' depends on its random starting centres; with a single start the result is
     #' not reproducible and frequently misses the tightest solution. Default is 25.
     #' @returns A list of results. CCA aligned embedding is stored in
-    #' $Ensemble$Samples$CCA$Embed by factor number. Ensemble sample cluster
+    #' $Ensemble$Samples$CCA$Embedding by factor number. Ensemble sample cluster
     #' assignment is stored in $Ensemble$Samples$CCA$ClusterRes by factor and
     #' cluster number.
     run_Ensemble_Sample_CCA = function(Clusters = NULL,
@@ -2510,7 +2502,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
       EnsembleFactnum = paste0("Embedding_", Factors)
       EnsembleRef = paste0("Reference_", Reference)
       self$Ensemble$Samples$CCA[[EnsembleFactnum]][[EnsembleRef]]$ClusterRes[[EnsembleClustnum]] = AlClusterRes
-      self$Ensemble$Samples$CCA[[EnsembleFactnum]][[EnsembleRef]]$Embed = Aligned_Embed
+      self$Ensemble$Samples$CCA[[EnsembleFactnum]][[EnsembleRef]]$Embedding = Aligned_Embed
     },
 
     #Ensemble sample clustering by standardised ConcATenation of embeddings (CAT)
@@ -2543,7 +2535,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' @returns A list of results. Ensemble sample cluster assignment is stored in
     #' $Ensemble$Samples$CAT$ClusterRes by factor number and cluster number,
     #' and the concatenated standardised representation in
-    #' $Ensemble$Samples$CAT$Embed by factor number.
+    #' $Ensemble$Samples$CAT$Embedding by factor number.
     run_Ensemble_Sample_CAT = function(Clusters = NULL,
                                        Seed = NULL,
                                        Factors = NULL,
@@ -2573,7 +2565,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
       EnsembleClustnum = paste0("Clusters_", Clusters)
       EnsembleFactnum = paste0("Embedding_", Factors)
       self$Ensemble$Samples$CAT[[EnsembleFactnum]]$ClusterRes[[EnsembleClustnum]] = ClusterRes
-      self$Ensemble$Samples$CAT[[EnsembleFactnum]]$Embed = Concat_Embed
+      self$Ensemble$Samples$CAT[[EnsembleFactnum]]$Embedding = Concat_Embed
     },
 
     #Ensemble sample clustering by CCA alignment followed by UMAP (CCA_UMAP)
@@ -2615,7 +2607,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' @returns A list of results. Ensemble sample cluster assignment is stored in
     #' $Ensemble$Samples$CCA_UMAP$ClusterRes by factor number, reference method
     #' and cluster number. The UMAP embedding matrix is stored in
-    #' $Ensemble$Samples$CCA_UMAP$EmbeddingMat by factor number, CCA reference
+    #' $Ensemble$Samples$CCA_UMAP$Embedding by factor number, CCA reference
     #' method and cluster number.
     #' @references McInnes L, Healy J, Melville J. UMAP: Uniform Manifold
     #' Approximation and Projection for Dimension Reduction. arXiv:1802.03426.
@@ -2668,7 +2660,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
       EnsembleFactnum = paste0("Embedding_", Factors)
       EnsembleRef = paste0("Reference_", Reference)
       self$Ensemble$Samples$CCA_UMAP[[EnsembleFactnum]][[EnsembleRef]]$ClusterRes[[EnsembleClustnum]] = ClusterRes
-      self$Ensemble$Samples$CCA_UMAP[[EnsembleFactnum]][[EnsembleRef]]$Embed = Ensemble_Clustering$Embed
+      self$Ensemble$Samples$CCA_UMAP[[EnsembleFactnum]][[EnsembleRef]]$Embedding[[EnsembleClustnum]] = Ensemble_Clustering$Embed
     },
 
     #Ensemble sample clustering by concatenation followed by UMAP (CAT_UMAP)
@@ -2708,7 +2700,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
     #' not reproducible and frequently misses the tightest solution. Default is 25.
     #' @returns A list of results. Ensemble sample cluster assignment is stored in
     #' $Ensemble$Samples$CAT_UMAP$ClusterRes by factor number and cluster number,
-    #' and the UMAP coordinates in $Ensemble$Samples$CAT_UMAP$Embed by
+    #' and the UMAP coordinates in $Ensemble$Samples$CAT_UMAP$Embedding by
     #' factor and cluster number.
     #' @references McInnes L, Healy J, Melville J. UMAP: Uniform Manifold
     #' Approximation and Projection for Dimension Reduction. arXiv:1802.03426.
@@ -2753,7 +2745,7 @@ Ensemble_Integration_Suite <- R6::R6Class(
       EnsembleClustnum = paste0("Clusters_", Clusters)
       EnsembleFactnum = paste0("Embedding_", Factors)
       self$Ensemble$Samples$CAT_UMAP[[EnsembleFactnum]]$ClusterRes[[EnsembleClustnum]] = ClusterRes
-      self$Ensemble$Samples$CAT_UMAP[[EnsembleFactnum]]$Embed = Ensemble_Clustering$Embed
+      self$Ensemble$Samples$CAT_UMAP[[EnsembleFactnum]]$Embedding[[EnsembleClustnum]] = Ensemble_Clustering$Embed
     },
 
     #Feature hierarchical clustering
@@ -4671,3 +4663,4 @@ Ensemble_Integration_Suite <- R6::R6Class(
     }
   )
 )
+
