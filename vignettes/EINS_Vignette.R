@@ -99,7 +99,7 @@ EINS_NCI60$run_Ensemble_Sample_MDS_HC(Clusters = 5)
 
 ## -----------------------------------------------------------------------------
 head(EINS_NCI60$Ensemble$Samples$MDS_HC$ClusterRes$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$MDS_HC$Embed$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$MDS_HC$Embedding$Clusters_5)
 head(EINS_NCI60$Ensemble$Samples$MDS_HC$DimensionInfo$Clusters_5$StabilityTable)
 plot(EINS_NCI60$Ensemble$Samples$MDS_HC$HClustTree$Clusters_5)
 
@@ -109,7 +109,7 @@ EINS_NCI60$run_Ensemble_Sample_MDS_km(Clusters = 5, Seed = 47)
 ## -----------------------------------------------------------------------------
 head(EINS_NCI60$Ensemble$Samples$MDS_km$ClusterRes$Clusters_5)
 head(EINS_NCI60$Ensemble$Samples$MDS_km$DistanceMatrix$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$MDS_km$Embed$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$MDS_km$Embedding$Clusters_5)
 
 ## -----------------------------------------------------------------------------
 EINS_NCI60$run_Ensemble_Sample_MPA(Clusters = 5)
@@ -125,28 +125,28 @@ EINS_NCI60$run_Ensemble_Sample_CCA(Clusters = 5, Reference = "MoCluster", Factor
 
 ## -----------------------------------------------------------------------------
 head(EINS_NCI60$Ensemble$Samples$CCA$Embedding_5$Reference_MoCluster$ClusterRes$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$CCA$Embedding_5$Reference_MoCluster$Embed)
+head(EINS_NCI60$Ensemble$Samples$CCA$Embedding_5$Reference_MoCluster$Embedding)
 
 ## -----------------------------------------------------------------------------
 EINS_NCI60$run_Ensemble_Sample_CAT(Clusters = 5, Factors = 5, Seed = 47)
 
 ## -----------------------------------------------------------------------------
 head(EINS_NCI60$Ensemble$Samples$CAT$Embedding_5$ClusterRes$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$CAT$Embedding_5$Embed)
+head(EINS_NCI60$Ensemble$Samples$CAT$Embedding_5$Embedding)
 
 ## -----------------------------------------------------------------------------
 EINS_NCI60$run_Ensemble_Sample_CCA_UMAP(Clusters = 5, Reference = "MoCluster", Factors = 5,  Seed = 47)
 
 ## -----------------------------------------------------------------------------
 head(EINS_NCI60$Ensemble$Samples$CCA_UMAP$Embedding_5$Reference_MoCluster$ClusterRes$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$CCA_UMAP$Embedding_5$Reference_MoCluster$Embed)
+head(EINS_NCI60$Ensemble$Samples$CCA_UMAP$Embedding_5$Reference_MoCluster$Embedding$Clusters_5)
 
 ## -----------------------------------------------------------------------------
 EINS_NCI60$run_Ensemble_Sample_CAT_UMAP(Clusters = 5, Factors = 5,  Seed = 47)
 
 ## -----------------------------------------------------------------------------
 head(EINS_NCI60$Ensemble$Samples$CAT_UMAP$Embedding_5$ClusterRes$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$CAT_UMAP$Embedding_5$Embed)
+head(EINS_NCI60$Ensemble$Samples$CAT_UMAP$Embedding_5$Embedding$Clusters_5)
 
 ## -----------------------------------------------------------------------------
 EINS_NCI60$run_Ensemble_Integration_Feature(Method = "Average", nFactors = 5)

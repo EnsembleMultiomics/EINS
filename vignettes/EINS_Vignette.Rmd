@@ -140,6 +140,7 @@ head(EINS_NCI60$Multi_Omics$FeatureRes$MCIA$Factors_5$Proteomics)
 LRAcluster can be performed using a single cluster number or a range.
 ```{r}
 EINS_NCI60$run_LRAcluster(Clusters = 2:8, Linkage = "ward.D2")
+EINS_NCI60$run_SNF(Clusters = 2:8, Distance = "euclidean squared")
 ```
 
 The fit of the multi-omics integration is stored in the `$Multi_Omics$Fit$LRAcluster` list and the cluster assignments in the `$Multi_Omics$ClusterRes$LRAcluster` list. See examples of 5 clusters:
@@ -191,10 +192,10 @@ Multidimensional Scaling ensemble integration followed by hierarchical sample cl
 EINS_NCI60$run_Ensemble_Sample_MDS_HC(Clusters = 5)
 ```
 
-The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$MDS_HC$ClusterRes` list, the sample distance matrix created from all multi-omics integration clusters is stored in `$Ensemble$Samples$MDS_HC$DistanceMatrix` list, the consensus matrix resulting from the distance matrix is stored in the `$Ensemble$Samples$MDS_HC$ConsensusMatrix` list, the dissimilarity matrix resulting from the dissimilarity matrix is stored in the `$Ensemble$Samples$MDS_HC$DissimilarityMatrix` list, the MDS embedding is stored in the `$Ensemble$Samples$MDS_HC$Embed` list, the distance matrix calculated from the MDS embedding is stored in the `$Ensemble$Samples$MDS_HC$EmbedDistanceMatrix` list, the fit of the MDS function is stored in the `$Ensemble$Samples$MDS_HC$MDS` list, the dimension selection arguments and fit are stored in the `$Ensemble$Samples$MDS_HC$DimensionInfo` list, and the hierarchical clustering tree is stored in the `$Ensemble$Samples$MDS_HC$HClustTree`. See examples for 5 clusters:
+The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$MDS_HC$ClusterRes` list, the sample distance matrix created from all multi-omics integration clusters is stored in `$Ensemble$Samples$MDS_HC$DistanceMatrix` list, the consensus matrix resulting from the distance matrix is stored in the `$Ensemble$Samples$MDS_HC$ConsensusMatrix` list, the dissimilarity matrix resulting from the dissimilarity matrix is stored in the `$Ensemble$Samples$MDS_HC$DissimilarityMatrix` list, the MDS embedding is stored in the `$Ensemble$Samples$MDS_HC$Embedding` list, the distance matrix calculated from the MDS embedding is stored in the `$Ensemble$Samples$MDS_HC$EmbedDistanceMatrix` list, the fit of the MDS function is stored in the `$Ensemble$Samples$MDS_HC$MDS` list, the dimension selection arguments and fit are stored in the `$Ensemble$Samples$MDS_HC$DimensionInfo` list, and the hierarchical clustering tree is stored in the `$Ensemble$Samples$MDS_HC$HClustTree`. See examples for 5 clusters:
 ```{r}
 head(EINS_NCI60$Ensemble$Samples$MDS_HC$ClusterRes$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$MDS_HC$Embed$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$MDS_HC$Embedding$Clusters_5)
 head(EINS_NCI60$Ensemble$Samples$MDS_HC$DimensionInfo$Clusters_5$StabilityTable)
 plot(EINS_NCI60$Ensemble$Samples$MDS_HC$HClustTree$Clusters_5)
 ```
@@ -204,11 +205,11 @@ Multidimensional Scaling ensemble integration followed by k-means clustering (MD
 EINS_NCI60$run_Ensemble_Sample_MDS_km(Clusters = 5, Seed = 47)
 ```
 
-The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$MDS_km$ClusterRes` list, the sample distance matrix is stored in the `$Ensemble$Samples$MDS_km$DistanceMatrix` list, and the MDS embedding is stored in the `$Ensemble$Samples$MDS_km$Embed` list. See examples for 5 clusters:
+The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$MDS_km$ClusterRes` list, the sample distance matrix is stored in the `$Ensemble$Samples$MDS_km$DistanceMatrix` list, and the MDS embedding is stored in the `$Ensemble$Samples$MDS_km$Embedding` list. See examples for 5 clusters:
 ```{r}
 head(EINS_NCI60$Ensemble$Samples$MDS_km$ClusterRes$Clusters_5)
 head(EINS_NCI60$Ensemble$Samples$MDS_km$DistanceMatrix$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$MDS_km$Embed$Clusters_5)
+head(EINS_NCI60$Ensemble$Samples$MDS_km$Embedding$Clusters_5)
 ```
 
 Ensemble sample creation by Median PArtition search (MPA) uses the cluster assignment as created from `run_Ensemble_Sample_CHC()`, and searches for the assignment which agrees most with the clustering results of the multi-omics integration methods by performing a greedy search. If the Adjusted Rand Index of a cluster assignment improves by moving a sample to a different cluster, and this does not result in the emptying of a cluster, the sample is reassigned. The greedy search is stopped once maximum number of sweeps (provided with argument `MaxSweeps`) is reached, or Adjusted Rand Index no longer improves.
@@ -229,10 +230,10 @@ Canonical Cluster Analysis (CCA) ensemble integration sample clustering aligns t
 EINS_NCI60$run_Ensemble_Sample_CCA(Clusters = 5, Reference = "MoCluster", Factors = 5, Seed = 47)
 ```
 
-The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$CCA[[Embedding_nFactors]][[Reference_Method]]$ClusterRes` list, and the aligned embedding matrix is stored in `$Ensemble$Samples$CCA[[Embedding_nFactors]][[Reference_Method]]$Embed` list. See examples for 5 clusters:
+The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$CCA[[Embedding_nFactors]][[Reference_Method]]$ClusterRes` list, and the aligned embedding matrix is stored in `$Ensemble$Samples$CCA[[Embedding_nFactors]][[Reference_Method]]$Embedding` list. See examples for 5 clusters:
 ```{r}
 head(EINS_NCI60$Ensemble$Samples$CCA$Embedding_5$Reference_MoCluster$ClusterRes$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$CCA$Embedding_5$Reference_MoCluster$Embed)
+head(EINS_NCI60$Ensemble$Samples$CCA$Embedding_5$Reference_MoCluster$Embedding)
 ```
 
 Standardized Concatenation (CAT) ensemble integration sample clustering creates an ensemble clustering result by standardizing and concatenating the embedding results form the multi-omics integration methods, without aligning these to a reference embedding. This method functions as a control for `run_Ensemble_Sample_CCA()`. K-means clustering is then performed on this concatenated embedding.
@@ -240,10 +241,10 @@ Standardized Concatenation (CAT) ensemble integration sample clustering creates 
 EINS_NCI60$run_Ensemble_Sample_CAT(Clusters = 5, Factors = 5, Seed = 47)
 ```
 
-The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$CAT[[Embedding_nFactors]]$ClusterRes` list, and the aligned embedding matrix is stored in `$Ensemble$Samples$CAT[[Embedding_nFactors]]$Embed` list. See examples for 5 clusters:
+The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$CAT[[Embedding_nFactors]]$ClusterRes` list, and the aligned embedding matrix is stored in `$Ensemble$Samples$CAT[[Embedding_nFactors]]$Embedding` list. See examples for 5 clusters:
 ```{r}
 head(EINS_NCI60$Ensemble$Samples$CAT$Embedding_5$ClusterRes$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$CAT$Embedding_5$Embed)
+head(EINS_NCI60$Ensemble$Samples$CAT$Embedding_5$Embedding)
 ```
 
 Canonical Cluster Analysis followed by UMAP (CCA-UMAP) ensemble integration sample clustering uses the aligned embedding created by `run_Ensemble_Sample_CCA()` and performs UMAP on this embedding to reduce the number of dimensions in the embedding, and allows assessment of non-linear representations. Once again, k-means clustering is performed for cluster assignment.
@@ -251,10 +252,10 @@ Canonical Cluster Analysis followed by UMAP (CCA-UMAP) ensemble integration samp
 EINS_NCI60$run_Ensemble_Sample_CCA_UMAP(Clusters = 5, Reference = "MoCluster", Factors = 5,  Seed = 47)
 ```
 
-The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$CCA_UMAP[[Embedding_nFactors]][[Reference_Method]]$ClusterRes` list, and the aligned embedding matrix is stored in `$Ensemble$Samples$CCA_UMAP[[Embedding_nFactors]][[]Reference_Method]$Embed` list. See examples for 5 clusters:
+The cluster assignments are stored in `$Ensemble$Samples$CCA_UMAP[[Embedding_nFactors]][[Reference_Method]]$ClusterRes` and the UMAP coordinates in `$Ensemble$Samples$CCA_UMAP[[Embedding_nFactors]][[Reference_Method]]$Embedding`, each indexed by cluster count. See examples for 5 clusters:
 ```{r}
 head(EINS_NCI60$Ensemble$Samples$CCA_UMAP$Embedding_5$Reference_MoCluster$ClusterRes$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$CCA_UMAP$Embedding_5$Reference_MoCluster$Embed)
+head(EINS_NCI60$Ensemble$Samples$CCA_UMAP$Embedding_5$Reference_MoCluster$Embedding$Clusters_5)
 ```
 
 Standardized Concatenation followed by UMAP (CAT-UMAP) ensemble integration sample clustering uses the unaligned embedding created by `run_Ensemble_Sample_CAT()` and performs UMAP on this embedding to reduce the number of dimensions in the embedding, and allows assessment of non-linear representations. This method functions as a control for `run_Ensemble_Sample_CCA_UMAP()`. Once again, k-means clustering is performed for cluster assignment.
@@ -262,10 +263,10 @@ Standardized Concatenation followed by UMAP (CAT-UMAP) ensemble integration samp
 EINS_NCI60$run_Ensemble_Sample_CAT_UMAP(Clusters = 5, Factors = 5,  Seed = 47)
 ```
 
-The ensemble integration sample cluster result is stored in the `$Ensemble$Samples$CCA_UMAP[[Embedding_nFactors]]$ClusterRes` list, and the aligned embedding matrix is stored in `$Ensemble$Samples$CCA_UMAP[[Embedding_nFactors]]$Embed` list. See examples for 5 clusters:
+The cluster assignments are stored in `$Ensemble$Samples$CAT_UMAP[[Embedding_nFactors]]$ClusterRes` and the UMAP coordinates in `$Ensemble$Samples$CAT_UMAP[[Embedding_nFactors]]$Embedding`, each indexed by cluster count. See examples for 5 clusters:
 ```{r}
 head(EINS_NCI60$Ensemble$Samples$CAT_UMAP$Embedding_5$ClusterRes$Clusters_5)
-head(EINS_NCI60$Ensemble$Samples$CAT_UMAP$Embedding_5$Embed)
+head(EINS_NCI60$Ensemble$Samples$CAT_UMAP$Embedding_5$Embedding$Clusters_5)
 ```
 
 Ensemble integration feature hierarchical clustering can be performed with 2 methods: 
@@ -332,9 +333,9 @@ An interactive scatterplot of samples in the factor space can be created for som
 EINS_NCI60$plot_Scatterplot(XAxis = 1, YAxis = 2, MetadataFeature = "tissue of origin")
 ```
 
-The scatterplots are stored in the `$Plots$Scatterplot` list. See example for MoCluster with 5 factors.
+The scatterplots are stored in the `$Plots$Scatterplot` list. See example for MoCluster with 5 clusters.
 ```{r}
-EINS_NCI60$Plots$Scatterplot$MoCluster$Factors_5
+EINS_NCI60$Plots$Scatterplot$MoCluster$Clusters_5
 ```
 
 A colored table with cluster assignment and metadata annotation can be created per multi-omics integration method with cluster results and ensemble integration sample clustering.
@@ -352,9 +353,9 @@ An interactive Sankey plot with the cluster assignment per multi-omics integrati
 EINS_NCI60$plot_Sankey_Clusters(MetadataFeature = "tissue of origin")
 ```
 
-The plots are stored in `$Plots$Sankey_Clusters`. See example for MoCluster cluster assignments.
+The plots are stored in `$Plots$Sankey_Clusters`. See example for MCIA cluster assignments.
 ```{r}
-EINS_NCI60$Plots$Sankey_Clusters$MoCluster
+EINS_NCI60$Plots$Sankey_Clusters$MCIA
 ```
 
 An interactive Sankey plot with the cluster assignments for multiple multi-omics integration methods with the same number of clusters. This plot is only available if multiple methods have calculated the same number of clusters. The samples can be colored with a metadata feature.
@@ -382,9 +383,9 @@ Enrichment dotplots can be created for the ensemble integration feature clusters
 EINS_NCI60$plot_Enrich_Dot(Method = "Average", Categories = 5)
 ```
 
-The plots are stored in the `$Plots$ORA_Dot` list. See example for the proteomics features in cluster 3.
+The plots are stored in the `$Plots$ORA_Dot` list. See example for the proteomics features in cluster 1.
 ```{r}
-EINS_NCI60$Plots$ORA_Dot$Average$Proteomics$Cluster_3
+EINS_NCI60$Plots$ORA_Dot$Average$Proteomics$Cluster_1
 ```
 
 Dendrograms can be created for multiple different hierarchical clustering results. 
@@ -404,7 +405,7 @@ MDS_HC Ensemble integration sample clustering results, with colored sample label
 EINS_NCI60$plot_Dendrogram(Data = "Ensemble MDS_HC", MetadataHeight = -1.5, Clusters = 5, MetadataFeatures = c("tissue of origin", "Epithelial", "p53"), LabelMetadata = "tissue of origin", LabelSize = 0.5, BarLabelSize = 0.5)
 ```
 
-Ensemble integration feature clustering results, with colored bars indicating the omics type below the plot.
+Ensemble integration feature clustering results, with colored bars indicating the omics type below the plot.This dendrogram is also available with `Data = " Ensemble Feature Concatenation"` if `$run_Ensemble_Integration_Feature()` is performed with Method = "Concatenation".
 ```{r}
 EINS_NCI60$plot_Dendrogram(Data = "Ensemble Feature Average", MetadataHeight = -0.25)
 ```
@@ -414,7 +415,7 @@ Feature clustering results per multi-omics integration method, with colored bars
 EINS_NCI60$plot_Dendrogram(Data = "Multi-Omics Feature", MetadataHeight = -0.25)
 ```
 
-Ensemble integration factor clustering results are available if `$run_Ensemble_Integration_Feature()` is performed with Method = "Concatenation.
+Ensemble integration factor clustering results are available if `$run_Ensemble_Integration_Feature()` is performed with Method = "Concatenation".
 
 #Optional methods
 Optimal sample and feature cluster numbers can be calculated. These methods are computationally expensive, and will therefore not be performed in this vignette. The optimal sample cluster number for the integrated data can be calculated using `$run_Optimal_Cluster_Number()`, the optimal feature cluster number for ensemble integration feature data can be calculated using `$run_Feature_Optimal_Cluster()`, and the optimal factor cluster number for ensemble integration factor data calculated with Method = "Concatenation can be calculated with `$run_Factor_Optimal_Cluster()`.
