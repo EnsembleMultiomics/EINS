@@ -311,9 +311,7 @@ PCA_Plot_Batch = function(Data,
                          x = PCA_rot[,XAxis],
                          y = PCA_rot[,YAxis],
                          color = Metadata[,BatchColumnName],
-                         colors = "Set1",
-                         width = 5,
-                         height = 5)
+                         colors = "Set1")
 
   Plot = plotly::add_trace(p = Plot,
                            type = "scatter",
@@ -4223,6 +4221,5 @@ EINS_Merge = function(Ref_EINS = NULL,
 }
 
 #----------------END----------------
-
 
 
